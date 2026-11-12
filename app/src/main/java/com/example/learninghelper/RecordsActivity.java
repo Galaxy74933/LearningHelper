@@ -9,7 +9,6 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 
 public class RecordsActivity extends Activity {
-    private boolean showDemo;
     private int version;
     private AppUi.Page page;
     private boolean deleting;
@@ -17,11 +16,9 @@ public class RecordsActivity extends Activity {
     protected boolean statisticsOnly() { return false; }
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        showDemo = state != null ? state.getBoolean("show_demo") : getIntent().getBooleanExtra("show_demo", false);
     }
-    @Override protected void onSaveInstanceState(Bundle out) { super.onSaveInstanceState(out); out.putBoolean("show_demo", showDemo); }
     @Override protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent); setIntent(intent); showDemo = intent.getBooleanExtra("show_demo", false); refresh();
+        super.onNewIntent(intent); setIntent(intent); refresh();
     }
     @Override protected void onResume() { super.onResume(); FocusCoordinator.clearNotice(this); refresh(); }
     @Override protected void onDestroy() {
@@ -30,7 +27,7 @@ public class RecordsActivity extends Activity {
     }
     private void refresh() {
         int request = ++version;
-        page = AppUi.page(this, statisticsOnly() ? "学习统计" : "学习记录", statisticsOnly() ? "看见每一次完成的积累" : "记录你的任务、时间和专注结果");
+        page = AppUi.page(this, statisticsOnly() ? "学习统计" : "学习记录", statisticsOnly() ? "看见每一次完成的积累" : "每一段认真投入，都有迹可循");
         AppUi.navigation(this, page, statisticsOnly() ? 2 : 1);
         page.content.addView(AppUi.text(this, "正在读取…", 16, AppUi.GRAY, false));
         StudyRepository.run(this, () -> StudyRepository.history(this), list -> {
@@ -44,39 +41,45 @@ public class RecordsActivity extends Activity {
     private void render(List<StudyRepository.Session> list) {
         page.content.removeAllViews();
         if (statisticsOnly()) {
-            long todaySeconds = 0, totalSeconds = 0; int todayCount = 0, totalCount = 0;
+            long todaySeconds = 0, totalSeconds = 0, totalFree = 0, totalTimed = 0, todayFree = 0, todayTimed = 0; int todayCount = 0, totalCount = 0;
             String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
             for (StudyRepository.Session s : list) {
-                if (s.demo || s.status != TaskProvider.COMPLETED) continue;
+                if (s.demo || !(s.status == TaskProvider.COMPLETED || (s.taskId == 0 && s.status == TaskProvider.EARLY_END))) continue;
                 totalSeconds += s.actual; totalCount++;
-                if (today.equals(s.endedDay)) { todaySeconds += s.actual; todayCount++; }
+                if (s.taskId == 0) totalFree += s.actual; else totalTimed += s.actual;
+                if (today.equals(s.endedDay)) { todaySeconds += s.actual; todayCount++; if(s.taskId==0)todayFree+=s.actual;else todayTimed+=s.actual; }
             }
-            metric("今日专注时长", todaySeconds / 60 + " 分钟"); metric("今日完成次数", todayCount + " 次");
-            metric("累计专注时长", totalSeconds / 60 + " 分钟"); metric("累计完成次数", totalCount + " 次");
-            AppUi.space(page.content, 16);
-            page.content.addView(AppUi.text(this, "只统计正常完成的正式专注。提前结束、异常中断、演示记录不计入。跨午夜的专注归入记录保存的结束日期。", 15, AppUi.GRAY, false));
+            LinearLayout hero=AppUi.card(this);android.graphics.drawable.GradientDrawable heroBg=new android.graphics.drawable.GradientDrawable();heroBg.setColor(AppUi.SOFT);heroBg.setCornerRadius(AppUi.dp(this,14));hero.setBackground(heroBg);hero.addView(AppUi.text(this,"今日专注时长",18,AppUi.GRAY,false));hero.addView(AppUi.text(this,(todaySeconds/60)+" 分钟",42,AppUi.GREEN,true));hero.addView(AppUi.text(this,"自由专注："+AppUi.duration((int)todayFree)+"\n定时专注："+AppUi.duration((int)todayTimed),14,AppUi.GRAY,false));page.content.addView(hero);
+            LinearLayout pair=new LinearLayout(this);pair.setWeightSum(2);pair.addView(statBox("今日完成次数",todayCount+" 次"),new LinearLayout.LayoutParams(0,AppUi.dp(this,116),1));pair.addView(statBox("累计专注时长",totalSeconds/60+" 分钟"),new LinearLayout.LayoutParams(0,AppUi.dp(this,116),1));page.content.addView(pair);
+            LinearLayout pair2=new LinearLayout(this);pair2.setWeightSum(2);pair2.addView(statBox("累计完成次数",totalCount+" 次"),new LinearLayout.LayoutParams(0,AppUi.dp(this,116),1));pair2.addView(statBox("累计分类时长","自由："+AppUi.duration((int)totalFree)+"\n定时："+AppUi.duration((int)totalTimed)),new LinearLayout.LayoutParams(0,AppUi.dp(this,116),1));page.content.addView(pair2);
+            page.content.addView(AppUi.text(this,"怎样计算",20,AppUi.INK,true));
+            page.content.addView(AppUi.text(this,"• 只统计正常完成的正式专注\n• 自由专注和定时专注分别记录并计入总时长\n• 自由专注手动保存计入统计；定时专注提前结束不计入\n• 10 秒、30 秒正常完成同样计入统计",15,AppUi.GRAY,false));
+            AppUi.space(page.content,24);Button back=AppUi.button(this,"返回任务，开始下一次专注",true);page.content.addView(back);back.setOnClickListener(v->{startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));finish();});
             return;
         }
-        Switch mode = new Switch(this); mode.setText("查看演示记录（不计统计）"); mode.setChecked(showDemo); page.content.addView(mode);
-        mode.setOnCheckedChangeListener((v, checked) -> { showDemo = checked; render(list); });
-        page.content.addView(AppUi.text(this, showDemo ? "仅显示 30 秒演示记录" : "正式记录 · 最近结束的排在前面", 14, AppUi.GRAY, false));
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA);
-        int count = 0;
+        int count = 0; String lastDay = "";
         for (StudyRepository.Session s : list) {
-            if (s.demo != showDemo) continue;
             count++;
+            String day = new SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(new Date(s.startedAt));
+            if (!day.equals(lastDay)) { String todayLabel = day.equals(new SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(new Date())) ? "今天 · " + new SimpleDateFormat("MM月dd日", Locale.CHINA).format(new Date(s.startedAt)) : day; page.content.addView(AppUi.text(this, todayLabel, 20, AppUi.INK, true)); lastDay = day; }
             LinearLayout card = AppUi.card(this);
             card.addView(AppUi.text(this, s.title, 20, AppUi.INK, true));
-            card.addView(AppUi.text(this, state(s) + (s.demo ? " · 演示" : ""), 15, AppUi.GREEN, true));
-            card.addView(AppUi.text(this, "计划 " + AppUi.duration(s.planned) + "\n实际 " + AppUi.duration(s.actual), 16, AppUi.INK, false));
-            card.addView(AppUi.text(this, "开始：" + format.format(new Date(s.startedAt)) + "\n结束：" + format.format(new Date(s.endedAt)), 13, AppUi.GRAY, false));
-            Button delete = AppUi.button(this, "删除这条记录", false);
-            delete.setTextColor(android.graphics.Color.rgb(170, 55, 55));
-            card.addView(delete);
+            String datePrefix = new SimpleDateFormat("yyyy-MM-dd",Locale.CHINA).format(new Date(s.startedAt)).equals(new SimpleDateFormat("yyyy-MM-dd",Locale.CHINA).format(new Date(s.endedAt))) ? "" : new SimpleDateFormat("MM月dd日 ",Locale.CHINA).format(new Date(s.endedAt));
+            String timeRange = new SimpleDateFormat("HH:mm",Locale.CHINA).format(new Date(s.startedAt)) + "–" + datePrefix + new SimpleDateFormat("HH:mm",Locale.CHINA).format(new Date(s.endedAt));
+            AppUi.space(card,6);
+            card.addView(AppUi.text(this,timeRange + " · " + AppUi.duration(s.actual),15,AppUi.GRAY,false));
+            LinearLayout footer=new LinearLayout(this);footer.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            boolean counted=s.status==TaskProvider.COMPLETED || (s.taskId==0 && s.status==TaskProvider.EARLY_END);
+            String label=counted?"已完成":s.status==TaskProvider.EARLY_END?"提前结束 · 不计入完成统计":"异常中断 · 不计入完成统计";
+            footer.addView(AppUi.text(this,label,14,counted?AppUi.GREEN:android.graphics.Color.rgb(160,106,52),true),new LinearLayout.LayoutParams(0,-2,1));
+            Button delete = AppUi.button(this, "删除", false);
+            delete.setTextSize(13);delete.setTextColor(android.graphics.Color.rgb(170,55,55));delete.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.WHITE));delete.setElevation(0);
+            footer.addView(delete,new LinearLayout.LayoutParams(AppUi.dp(this,64),AppUi.dp(this,48)));card.addView(footer);
             delete.setOnClickListener(v -> confirmDelete(s));
             page.content.addView(card);
         }
-        if (count == 0) page.content.addView(AppUi.text(this, "还没有" + (showDemo ? "演示" : "正式") + "记录。完成第一次专注后，这里会留下学习记录。", 17, AppUi.GRAY, false));
+        if (count == 0) page.content.addView(AppUi.text(this, "还没有学习记录，完成第一次专注后，这里会留下学习记录。", 17, AppUi.GRAY, false));
     }
     private void confirmDelete(StudyRepository.Session session) {
         if (deleting || (deleteDialog != null && deleteDialog.isShowing())) return;
@@ -111,9 +114,23 @@ public class RecordsActivity extends Activity {
         LinearLayout card = AppUi.card(this); card.addView(AppUi.text(this, label, 16, AppUi.GRAY, false));
         card.addView(AppUi.text(this, value, 32, AppUi.GREEN, true)); page.content.addView(card);
     }
+    private LinearLayout statBox(String label,String value){
+        LinearLayout box=AppUi.card(this);
+        int pad=AppUi.dp(this,14);box.setPadding(pad,pad,pad,pad);
+        TextView title=AppUi.text(this,label,15,AppUi.GRAY,false);
+        title.setSingleLine(true);title.setAutoSizeTextTypeUniformWithConfiguration(11,15,1,android.util.TypedValue.COMPLEX_UNIT_SP);
+        box.addView(title,new LinearLayout.LayoutParams(-1,AppUi.dp(this,24)));
+        boolean breakdown=label.equals("累计分类时长");
+        TextView amount=AppUi.text(this,value,breakdown?14:25,AppUi.INK,!breakdown);
+        amount.setMaxLines(breakdown?2:1);amount.setLineSpacing(0,1f);
+        amount.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        amount.setAutoSizeTextTypeUniformWithConfiguration(10,breakdown?14:25,1,android.util.TypedValue.COMPLEX_UNIT_SP);
+        box.addView(amount,new LinearLayout.LayoutParams(-1,0,1));
+        return box;
+    }
     public static String state(StudyRepository.Session s) {
         if (s.status == TaskProvider.COMPLETED) return "专注已完成";
-        if (s.status == TaskProvider.EARLY_END) return "提前结束";
+        if (s.status == TaskProvider.EARLY_END) return s.taskId==0?"自由专注已保存":"提前结束";
         if (s.status == TaskProvider.INTERRUPTED) return "异常中断";
         return "进行中";
     }

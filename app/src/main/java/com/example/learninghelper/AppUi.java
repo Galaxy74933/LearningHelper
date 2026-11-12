@@ -11,6 +11,8 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.view.View;
+import android.view.InputDevice;
+import android.view.MotionEvent;
 import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -23,7 +25,7 @@ public final class AppUi {
     public static final int GREEN = Color.rgb(37,120,104), INK = Color.rgb(23,37,42),
             GRAY = Color.rgb(101,117,123), BG = Color.rgb(245,247,248), SOFT = Color.rgb(231,242,236);
     public static final int[] DURATIONS = {900,1500,2700,3600,10,30};
-    public static final String[] DURATION_LABELS = {"15 分钟","25 分钟","45 分钟","60 分钟","演示 10 秒（不计正式统计）","演示 30 秒（不计正式统计）"};
+    public static final String[] DURATION_LABELS = {"15 分钟","25 分钟","45 分钟","60 分钟","10 秒","30 秒"};
     public static final String[] SOUNDS = {"关闭声音","雨声（合成）","海浪（合成）","林间声（合成）"};
     public static SharedPreferences prefs(Context c) { return c.getSharedPreferences("focus_preferences", Context.MODE_PRIVATE); }
     public static int dp(Context c, int v) { return Math.round(v*c.getResources().getDisplayMetrics().density); }
@@ -68,7 +70,7 @@ public final class AppUi {
         });
         LinearLayout heading=new LinearLayout(a);heading.setOrientation(LinearLayout.VERTICAL);heading.setPadding(dp(a,20),dp(a,16),dp(a,20),dp(a,8));
         heading.addView(text(a,title,25,INK,true));if(subtitle!=null&&!subtitle.isEmpty())heading.addView(text(a,subtitle,14,GRAY,false));p.root.addView(heading);
-        ScrollView scroll=new ScrollView(a);scroll.setFillViewport(true);
+        ScrollView scroll=new WheelScrollView(a);scroll.setFillViewport(true);scroll.setFocusable(true);scroll.setFocusableInTouchMode(true);
         p.content=new LinearLayout(a);p.content.setOrientation(LinearLayout.VERTICAL);p.content.setPadding(dp(a,20),dp(a,4),dp(a,20),dp(a,24));scroll.addView(p.content);
         p.root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));a.setContentView(p.root);p.root.requestApplyInsets();return p;
     }
@@ -82,5 +84,14 @@ public final class AppUi {
         page.root.addView(row);
     }
     public static String duration(int s){return (s/60)+" 分 "+(s%60)+" 秒";}
+    private static final class WheelScrollView extends ScrollView {
+        WheelScrollView(Context c){super(c);}
+        @Override public boolean dispatchGenericMotionEvent(MotionEvent event){
+            if(event.getAction()==MotionEvent.ACTION_SCROLL && (event.getSource() & InputDevice.SOURCE_CLASS_POINTER)!=0){
+                float dy=event.getAxisValue(MotionEvent.AXIS_VSCROLL); if(dy!=0){scrollBy(0,Math.round(-dy*getResources().getDisplayMetrics().density*56)); return true;}
+            }
+            return super.dispatchGenericMotionEvent(event);
+        }
+    }
 }
 

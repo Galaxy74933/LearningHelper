@@ -3,6 +3,8 @@ package com.example.learninghelper;
 import android.app.*;
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.Gravity;
+import android.view.View;
 import android.text.InputFilter;
 import android.widget.*;
 import java.text.SimpleDateFormat;
@@ -52,17 +54,20 @@ public class MainActivity extends Activity {
         page.content.removeAllViews();
         LinearLayout summary = AppUi.card(this);
         summary.addView(AppUi.text(this, "今日完成 " + d.todayCount + " 次 · " + d.todaySeconds / 60 + " 分钟", 20, AppUi.GREEN, true));
-        summary.addView(AppUi.text(this, "演示、提前结束和异常中断不计入统计", 13, AppUi.GRAY, false));
+        summary.addView(AppUi.text(this, "定时专注提前结束、异常中断不计入统计", 13, AppUi.GRAY, false));
         page.content.addView(summary);
         if (d.running != null) {
             Button active = AppUi.button(this, d.running.owned() ? "返回当前专注：" + d.running.title : "上次专注已中断，点击处理", true);
             page.content.addView(active);
             active.setOnClickListener(v -> startActivity(new Intent(this, FocusActivity.class).putExtra("session_id", d.running.id)));
         }
-        Button add = AppUi.button(this, "+ 新建学习任务", true); page.content.addView(add);
-        add.setOnClickListener(v -> { if (!busy) edit(null); });
+        LinearLayout taskHeading=new LinearLayout(this);taskHeading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView taskTitle=AppUi.text(this,"待完成任务",21,AppUi.INK,true);taskHeading.addView(taskTitle,new LinearLayout.LayoutParams(0,-2,1));
+        Button add=taskAction("+ 新建任务",false,false);taskHeading.addView(add,new LinearLayout.LayoutParams(AppUi.dp(this,104),AppUi.dp(this,36)));add.setOnClickListener(v->{if(!busy)edit(null);});
         Button free = AppUi.button(this, "自由专注（正计时）", false); page.content.addView(free);
         free.setOnClickListener(v -> startActivity(new Intent(this, FreeFocusActivity.class)));
+        Button memo = AppUi.button(this, "学习备忘", false); page.content.addView(memo);
+        memo.setOnClickListener(v -> startActivity(new Intent(this, MemoActivity.class)));
         RadioGroup group = new RadioGroup(this); group.setOrientation(RadioGroup.HORIZONTAL);
         String[] labels = {"待完成", "已完成", "全部"};
         for (int i = 0; i < labels.length; i++) {
@@ -70,24 +75,29 @@ public class MainActivity extends Activity {
         }
         group.check(100 + filter); page.content.addView(group);
         group.setOnCheckedChangeListener((g, id) -> { filter = id - 100; render(d); });
+        taskTitle.setText(filter==0?"待完成任务":filter==1?"已完成任务":"全部任务");page.content.addView(taskHeading);
         int count = 0;
         for (StudyRepository.Task t : d.tasks) {
             if (filter == 0 && t.done || filter == 1 && !t.done) continue;
             count++;
             LinearLayout card = AppUi.card(this);
-            card.addView(AppUi.text(this, t.title, 20, AppUi.INK, true));
+            LinearLayout titleRow=new LinearLayout(this);titleRow.setGravity(Gravity.CENTER_VERTICAL);
+            TextView circle=AppUi.text(this,t.done?"✓":"○",30,AppUi.GREEN,false);circle.setContentDescription(t.done?"撤销完成":"标为完成");titleRow.addView(circle,new LinearLayout.LayoutParams(AppUi.dp(this,34),-2));
+            titleRow.addView(AppUi.text(this, t.title, 20, AppUi.INK, true),new LinearLayout.LayoutParams(0,-2,1));card.addView(titleRow);
             card.addView(AppUi.text(this, t.done ? "已完成" : "待完成", 13, AppUi.GREEN, false));
             if (!t.note.isEmpty()) card.addView(AppUi.text(this, t.note, 15, AppUi.GRAY, false));
-            if (!t.done) {
-                Button focus = AppUi.button(this, "开始专注", true); card.addView(focus);
-                focus.setOnClickListener(v -> { if (!busy) startActivity(new Intent(this, FocusActivity.class).putExtra("task_id", t.id)); });
-            }
-            LinearLayout row = new LinearLayout(this);
+            LinearLayout row = new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);AppUi.space(card,8);
             Button toggle = AppUi.button(this, t.done ? "撤销完成" : "标为完成", false);
-            Button edit = AppUi.button(this, "编辑", false), delete = AppUi.button(this, "删除", false);
-            AppUi.weighted(row, toggle); AppUi.weighted(row, edit); AppUi.weighted(row, delete); card.addView(row);
-            toggle.setTextSize(12); edit.setTextSize(12); delete.setTextSize(12);
+            Button edit = taskAction("编辑",false,true), delete = taskAction("删除",false,true);
+            row.addView(edit,new LinearLayout.LayoutParams(AppUi.dp(this,32),AppUi.dp(this,36)));
+            row.addView(AppUi.text(this,"·",12,AppUi.GRAY,false));
+            row.addView(delete,new LinearLayout.LayoutParams(AppUi.dp(this,32),AppUi.dp(this,36)));
+            row.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));
+            if (!t.done) { Button focus=taskAction("开始专注",true,false);row.addView(focus,new LinearLayout.LayoutParams(AppUi.dp(this,100),AppUi.dp(this,34)));focus.setOnClickListener(v->{if(!busy)startActivity(new Intent(this,FocusActivity.class).putExtra("task_id",t.id));}); }
+            card.addView(row);
+            toggle.setTextSize(12); edit.setTextSize(12); delete.setTextSize(12); toggle.setVisibility(View.GONE);
             boolean locked = d.running != null && d.running.taskId == t.id;
+            circle.setEnabled(!locked);circle.setOnClickListener(v->{if(!busy)mutate(()->StudyRepository.done(this,t));});
             toggle.setEnabled(!locked); edit.setEnabled(!locked); delete.setEnabled(!locked);
             toggle.setOnClickListener(v -> mutate(() -> StudyRepository.done(this, t)));
             edit.setOnClickListener(v -> { if (!busy) edit(t); });
@@ -99,6 +109,25 @@ public class MainActivity extends Activity {
             page.content.addView(card);
         }
         if (count == 0) page.content.addView(AppUi.text(this, filter == 0 ? "这里还没有待完成任务。点击上方按钮添加一个吧。" : "这个分类暂时没有任务。", 16, AppUi.GRAY, false));
+    }
+    // Task-card actions use explicit backgrounds so the system theme cannot restore square buttons or shadows.
+    private Button taskAction(String label, boolean primary, boolean textOnly) {
+        Button button = new Button(this);
+        button.setText(label);button.setAllCaps(false);button.setTextSize(textOnly?12:14);
+        button.setTextColor(textOnly?AppUi.GRAY:primary?android.graphics.Color.WHITE:AppUi.INK);
+        button.setTypeface(android.graphics.Typeface.DEFAULT,textOnly?android.graphics.Typeface.NORMAL:android.graphics.Typeface.BOLD);
+        button.setMinWidth(0);button.setMinimumWidth(0);button.setMinHeight(0);button.setMinimumHeight(0);
+        button.setPadding(0,0,0,0);button.setIncludeFontPadding(false);button.setGravity(Gravity.CENTER);
+        button.setSingleLine(true);button.setStateListAnimator(null);button.setElevation(0);button.setTranslationZ(0);
+        button.setBackgroundTintList(null);
+        android.graphics.drawable.GradientDrawable shape=new android.graphics.drawable.GradientDrawable();
+        shape.setColor(textOnly?android.graphics.Color.TRANSPARENT:primary?AppUi.GREEN:android.graphics.Color.WHITE);
+        shape.setCornerRadius(AppUi.dp(this,10));
+        if(!primary&&!textOnly)shape.setStroke(AppUi.dp(this,1),android.graphics.Color.rgb(221,229,232));
+        android.graphics.drawable.GradientDrawable mask=new android.graphics.drawable.GradientDrawable();
+        mask.setColor(android.graphics.Color.WHITE);mask.setCornerRadius(AppUi.dp(this,10));
+        button.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x22257868),shape,mask));
+        return button;
     }
     private interface Change { void run(); }
     private void mutate(Change change) {

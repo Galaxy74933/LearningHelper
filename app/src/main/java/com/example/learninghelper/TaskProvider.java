@@ -187,7 +187,7 @@ public class TaskProvider extends ContentProvider {
             v.put("planned_seconds", duration); v.put("actual_seconds", 0);
             v.put("started_at", System.currentTimeMillis());
             v.put("started_elapsed", SystemClock.elapsedRealtime());
-            v.put("status", RUNNING); v.put("is_demo", duration == 10 || duration == 30 ? 1 : 0);
+            v.put("status", RUNNING); v.put("is_demo", 0);
             v.put("owner_token", PROCESS_TOKEN);
             String memo = input.getAsString("memo"); v.put("memo", memo == null ? "" : memo.trim());
             long id = db.insertOrThrow("sessions", null, v);
@@ -236,7 +236,7 @@ public class TaskProvider extends ContentProvider {
     }
 
     private static class DatabaseHelper extends SQLiteOpenHelper {
-        DatabaseHelper(Context c) { super(c, "learning_helper.db", null, 3); }
+        DatabaseHelper(Context c) { super(c, "learning_helper.db", null, 4); }
         @Override public void onCreate(SQLiteDatabase db) {
             db.execSQL("CREATE TABLE tasks (_id INTEGER PRIMARY KEY AUTOINCREMENT,"
                     + "title TEXT NOT NULL,note TEXT NOT NULL DEFAULT '',done INTEGER NOT NULL DEFAULT 0,"
@@ -245,7 +245,8 @@ public class TaskProvider extends ContentProvider {
         }
         @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
             if (oldVersion < 2) sessions(db);
-            if (oldVersion < 3) db.execSQL("ALTER TABLE sessions ADD COLUMN memo TEXT NOT NULL DEFAULT ''");
+            if (oldVersion == 2) db.execSQL("ALTER TABLE sessions ADD COLUMN memo TEXT NOT NULL DEFAULT ''");
+            if (oldVersion < 4) db.execSQL("UPDATE sessions SET is_demo=0 WHERE planned_seconds IN (10,30)");
         }
         private void sessions(SQLiteDatabase db) {
             db.execSQL("CREATE TABLE IF NOT EXISTS sessions (_id INTEGER PRIMARY KEY AUTOINCREMENT,"

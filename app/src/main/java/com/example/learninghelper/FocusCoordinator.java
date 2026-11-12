@@ -52,7 +52,7 @@ public final class FocusCoordinator {
         NoiseService.stopMatching(c,id);
         if(changed>0&&notify){
             String title=s.status==TaskProvider.COMPLETED?"专注完成":"专注已结束";
-            String body=s.title+" · "+AppUi.duration(s.actual)+(s.demo?" · 演示记录":"");
+            String body=s.title+" · "+AppUi.duration(s.actual);
             notice(c,s,title,body,false);
         }
         return s;
@@ -61,7 +61,7 @@ public final class FocusCoordinator {
         channels(c);if(!notificationsAllowed(c))return;
         Intent i=new Intent(c,recover?FocusActivity.class:RecordsActivity.class)
                 .setData(Uri.parse("learninghelper://result/"+s.id)).putExtra("session_id",s.id)
-                .putExtra("show_demo",s.demo).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pi=PendingIntent.getActivity(c,0,i,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         Notification n=new Notification.Builder(c,REMINDERS).setSmallIcon(R.drawable.ic_focus_notification)
                 .setContentTitle(title).setContentText(body).setStyle(new Notification.BigTextStyle().bigText(body))

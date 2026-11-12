@@ -14,16 +14,14 @@ public class SettingsActivity extends Activity {
     private void render() {
         AppUi.Page page = AppUi.page(this, "设置", "简单设置，专注当下"); AppUi.navigation(this, page, 3);
         page.content.addView(AppUi.text(this, "默认专注时长", 18, AppUi.INK, true));
-        Spinner duration = spinner(Arrays.copyOf(AppUi.DURATION_LABELS, 4), Math.min(3, AppUi.prefs(this).getInt("duration_index", 1)));
+        Spinner duration = spinner(AppUi.DURATION_LABELS, AppUi.prefs(this).getInt("duration_index", 1));
         page.content.addView(duration);
         page.content.addView(AppUi.text(this, "默认声音", 18, AppUi.INK, true));
         Spinner sound = spinner(AppUi.SOUNDS, AppUi.prefs(this).getInt("sound_index", 0)); page.content.addView(sound);
-        Switch demo = new Switch(this); demo.setText("开启 10 秒 / 30 秒演示选项"); demo.setChecked(AppUi.prefs(this).getBoolean("demo", false)); page.content.addView(demo);
-        page.content.addView(AppUi.text(this, "开启后，在专注页面的时长列表中选择 10 秒或 30 秒。演示记录单独查看，不进入正式统计。", 14, AppUi.GRAY, false));
         Button save = AppUi.button(this, "保存设置", true); page.content.addView(save);
         save.setOnClickListener(v -> {
             AppUi.prefs(this).edit().putInt("duration_index", duration.getSelectedItemPosition())
-                    .putInt("sound_index", sound.getSelectedItemPosition()).putBoolean("demo", demo.isChecked()).apply();
+                    .putInt("sound_index", sound.getSelectedItemPosition()).apply();
             AppUi.toast(this, "设置已保存，下次专注时生效");
         });
         LinearLayout card = AppUi.card(this); page.content.addView(card);
