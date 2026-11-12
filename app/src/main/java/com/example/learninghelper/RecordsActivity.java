@@ -68,9 +68,7 @@ public class RecordsActivity extends Activity {
             LinearLayout card = AppUi.card(this);
             card.addView(AppUi.text(this, s.title, 20, AppUi.INK, true));
             card.addView(AppUi.text(this, state(s) + (s.demo ? " · 演示" : ""), 15, AppUi.GREEN, true));
-            String durationText = s.taskId == 0 ? "实际 " + AppUi.duration(s.actual) : "计划 " + AppUi.duration(s.planned) + "\n实际 " + AppUi.duration(s.actual);
-            card.addView(AppUi.text(this, durationText, 16, AppUi.INK, false));
-            if (s.taskId == 0 && s.memo != null && !s.memo.isEmpty()) card.addView(AppUi.text(this, "备忘：" + s.memo, 15, AppUi.GRAY, false));
+            card.addView(AppUi.text(this, "计划 " + AppUi.duration(s.planned) + "\n实际 " + AppUi.duration(s.actual), 16, AppUi.INK, false));
             card.addView(AppUi.text(this, "开始：" + format.format(new Date(s.startedAt)) + "\n结束：" + format.format(new Date(s.endedAt)), 13, AppUi.GRAY, false));
             Button delete = AppUi.button(this, "删除这条记录", false);
             delete.setTextColor(android.graphics.Color.rgb(170, 55, 55));

@@ -16,8 +16,7 @@ public class FreeFocusActivity extends Activity {
     @Override protected void onPause(){h.removeCallbacks(tick);super.onPause();}
     private void render(){ page=AppUi.page(this,"自由专注","无需先创建任务，直接开始记录学习时间"); if(session==null) setup(); else running(); }
     private void setup(){
-        page.content.addView(AppUi.text(this,"学习备忘（可选）",18,AppUi.INK,true));
-        memo=new EditText(this); memo.setHint("例如：完成 Android 作业第 1 部分"); memo.setMinLines(3); page.content.addView(memo);
+        memo=new EditText(this); memo.setHint("学习备忘：例如完成 Android 作业第 1 部分"); memo.setMinLines(3); page.content.addView(memo);
         Button audio=AppUi.button(this,"选择本地音频（可选）",false); page.content.addView(audio); audio.setOnClickListener(v->pickAudio());
         Button start=AppUi.button(this,"开始正计时",true); page.content.addView(start); start.setOnClickListener(v->{if(busy)return;busy=true;StudyRepository.run(this,()->StudyRepository.startFree(this,memo.getText().toString()),s->{busy=false;session=s;started=SystemClock.elapsedRealtime();render();String saved=getPreferences(0).getString("audio",null);if(saved!=null)NoiseService.play(this,s.id,Uri.parse(saved));},e->{busy=false;AppUi.error(this,e);});});
         Button back=AppUi.button(this,"返回任务首页",false);page.content.addView(back);back.setOnClickListener(v->finish());
@@ -25,7 +24,7 @@ public class FreeFocusActivity extends Activity {
     private void running(){
         page.content.addView(AppUi.text(this,"自由专注进行中",22,AppUi.INK,true)); timer=AppUi.text(this,"00:00",42,AppUi.GREEN,true);page.content.addView(timer); status=AppUi.text(this,"正在记录实际专注时长",15,AppUi.GRAY,false);page.content.addView(status);
         if(session.memo!=null&&!session.memo.isEmpty())page.content.addView(AppUi.text(this,"备忘："+session.memo,15,AppUi.GRAY,false));
-        Button end=AppUi.button(this,"结束并保存",true);page.content.addView(end);end.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("结束自由专注？").setMessage("结束后会保存当前实际专注时长和学习备忘。确定要结束吗？").setNegativeButton("继续专注",null).setPositiveButton("结束并保存",(d,w)->finishFocus()).show());
+        Button end=AppUi.button(this,"结束并保存",true);page.content.addView(end);end.setOnClickListener(v->finishFocus());
         Button sound=AppUi.button(this,"环境声音",false);page.content.addView(sound);sound.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("选择声音").setSingleChoiceItems(AppUi.SOUNDS,NoiseService.sound(session.id),(d,w)->{NoiseService.play(this,session.id,w);d.dismiss();}).show()); h.post(tick);
     }
     private void finishFocus(){if(busy)return;busy=true;NoiseService.stopMatching(this,session.id);StudyRepository.run(this,()->StudyRepository.updateStatus(this,session.id,TaskProvider.EARLY_END),n->{busy=false;AppUi.toast(this,"自由专注已保存");finish();},e->{busy=false;AppUi.error(this,e);});}

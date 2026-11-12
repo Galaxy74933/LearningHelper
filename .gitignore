@@ -1,15 +1,28 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+# Gradle缓存、编译产物
+.gradle/
+build/
+.kotlin/
+*/build/
+
+# Android本地配置（每个人SDK路径不一样，绝对不要提交）
 local.properties
+
+# 安装包、日志
+*.apk
+*.aab
+*.log
+captures/
+
+# Android Studio IDE缓存
+.idea/
+*.iml
+.externalNativeBuild/
+.cxx/
+
+# 签名文件
+*.jks
+*.keystore
+
+# 系统垃圾文件
+.DS_Store
+Thumbs.db
