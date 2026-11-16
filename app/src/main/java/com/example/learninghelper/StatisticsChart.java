@@ -14,8 +14,8 @@ final class StatisticsChart extends View {
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
     StatisticsChart(Context c,long[] values,String[] dates,boolean focus){
         super(c);this.values=values;this.dates=dates;this.focus=focus;
-        StringBuilder description=new StringBuilder(focus?"近七日专注时长：":"近七日完成任务：");
-        for(int i=0;i<7;i++)description.append(dates[i]).append(" ").append(values[i]).append(focus?"秒；":"个；");
+        StringBuilder description=new StringBuilder(focus?L10n.t(getContext(),"近七日专注时长："):L10n.t(getContext(),"近七日完成任务："));
+        for(int i=0;i<7;i++)description.append(dates[i]).append(" ").append(values[i]).append(focus?L10n.t(getContext(),"秒；"):L10n.t(getContext(),"个；"));
         setContentDescription(description);setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
     }
     private float dp(int n){return AppUi.dp(getContext(),n);}
@@ -31,7 +31,7 @@ final class StatisticsChart extends View {
             float y=bottom-(bottom-top)*i/3;
             paint.setColor(AppUi.SOFT);canvas.drawLine(left,y,right,y,paint);
             paint.setColor(AppUi.GRAY);paint.setTextAlign(Paint.Align.RIGHT);
-            canvas.drawText((long)(step*i)+(focus?(unit==3600?"时":unit==60?"分":"秒"):""),left-dp(8),y+dp(3),paint);
+            canvas.drawText((long)(step*i)+(focus?(unit==3600?L10n.t(getContext(),"时"):unit==60?L10n.t(getContext(),"分"):L10n.t(getContext(),"秒")):""),left-dp(8),y+dp(3),paint);
         }
         float spacing=(right-left)/6;Path line=new Path();paint.setTextAlign(Paint.Align.CENTER);
         for(int i=0;i<7;i++){
@@ -42,6 +42,6 @@ final class StatisticsChart extends View {
             else {if(i==0)line.moveTo(x,y);else line.lineTo(x,y);canvas.drawCircle(x,y,dp(3),paint);}
         }
         if(!focus){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(2));canvas.drawPath(line,paint);paint.setStyle(Paint.Style.FILL);}
-        if(max==0){paint.setColor(AppUi.GRAY);paint.setTextSize(dp(12));canvas.drawText("近七日暂无"+(focus?"专注":"完成")+"记录",(left+right)/2,top+dp(28),paint);}
+        if(max==0){paint.setColor(AppUi.GRAY);paint.setTextSize(dp(12));canvas.drawText(AppUi.label(getContext(),"近七日暂无"+(focus?"专注":"完成")+"记录",focus?"No focus records in the last 7 days":"No completed tasks in the last 7 days"),(left+right)/2,top+dp(28),paint);}
     }
 }

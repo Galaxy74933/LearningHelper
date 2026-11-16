@@ -191,6 +191,12 @@ public class TaskProvider extends ContentProvider {
                 }
             }
             String title = free ? "自由专注" : "倒计时专注";
+            String todoId=input.getAsString("todo_id");if(todoId==null)todoId="";
+            if(!todoId.isEmpty()){
+                org.json.JSONObject todo=StudyRepository.todo(getContext(),todoId);
+                if(todo==null||todo.optBoolean("done"))throw new IllegalStateException("任务不存在或已经完成");
+                task=0L;title=todo.optString("title");
+            }
             if (task > 0) try (Cursor c = db.query("tasks", new String[]{"title"},
                     "_id=? AND done=0 AND deleted=0", new String[]{String.valueOf(task)},
                     null, null, null)) {
@@ -198,7 +204,7 @@ public class TaskProvider extends ContentProvider {
                 title = c.getString(0);
             }
             ContentValues v = new ContentValues();
-            v.put("free_focus", free ? 1 : 0); v.put("task_id", task); v.put("title_snapshot", title);
+            v.put("todo_id",todoId);v.put("free_focus", free ? 1 : 0); v.put("task_id", task); v.put("title_snapshot", title);
             v.put("planned_seconds", duration); v.put("actual_seconds", 0);
             v.put("started_at", System.currentTimeMillis());
             v.put("started_elapsed", SystemClock.elapsedRealtime());
@@ -251,7 +257,7 @@ public class TaskProvider extends ContentProvider {
     }
 
     private static class DatabaseHelper extends SQLiteOpenHelper {
-        DatabaseHelper(Context c) { super(c, "learning_helper.db", null, 6); }
+        DatabaseHelper(Context c) { super(c, "learning_helper.db", null, 7); }
         @Override public void onCreate(SQLiteDatabase db) {
             db.execSQL("CREATE TABLE tasks (_id INTEGER PRIMARY KEY AUTOINCREMENT,"
                     + "title TEXT NOT NULL,note TEXT NOT NULL DEFAULT '',done INTEGER NOT NULL DEFAULT 0,"
@@ -263,11 +269,12 @@ public class TaskProvider extends ContentProvider {
             if (oldVersion == 2) db.execSQL("ALTER TABLE sessions ADD COLUMN memo TEXT NOT NULL DEFAULT ''");
             if (oldVersion < 4) db.execSQL("UPDATE sessions SET is_demo=0 WHERE planned_seconds IN (10,30)");
             if (oldVersion >= 2 && oldVersion < 6) { db.execSQL("ALTER TABLE sessions ADD COLUMN free_focus INTEGER NOT NULL DEFAULT 0"); db.execSQL("UPDATE sessions SET free_focus=1 WHERE task_id=0"); }
+            if (oldVersion >= 2 && oldVersion < 7) db.execSQL("ALTER TABLE sessions ADD COLUMN todo_id TEXT NOT NULL DEFAULT ''");
             if (oldVersion < 5) db.execSQL("ALTER TABLE tasks ADD COLUMN completed_at INTEGER NOT NULL DEFAULT 0");
         }
         private void sessions(SQLiteDatabase db) {
             db.execSQL("CREATE TABLE IF NOT EXISTS sessions (_id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                    + "task_id INTEGER NOT NULL,title_snapshot TEXT NOT NULL,planned_seconds INTEGER NOT NULL,"
+                    + "todo_id TEXT NOT NULL DEFAULT '',task_id INTEGER NOT NULL,title_snapshot TEXT NOT NULL,planned_seconds INTEGER NOT NULL,"
                     + "actual_seconds INTEGER NOT NULL DEFAULT 0,started_at INTEGER NOT NULL,"
                     + "started_elapsed INTEGER NOT NULL,ended_at INTEGER NOT NULL DEFAULT 0,"
                     + "ended_day TEXT NOT NULL DEFAULT '',status INTEGER NOT NULL DEFAULT 0,"

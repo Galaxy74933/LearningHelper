@@ -38,6 +38,7 @@ public final class StudyRepository {
     public static class Session {
         public long id, taskId, startedAt, startedElapsed, endedAt;
         public String title, owner, endedDay, memo;
+        public String todoId="";
         public int planned, actual, status;
         public boolean demo, free;
         public boolean owned() { return TaskProvider.PROCESS_TOKEN.equals(owner); }
@@ -105,6 +106,37 @@ public final class StudyRepository {
         if(uri==null)throw new IllegalStateException("专注未启动");
         return session(c,ContentUris.parseId(uri));
     }
+    public static List<org.json.JSONObject> todos(Context c) {
+        try {org.json.JSONArray array=new org.json.JSONArray(c.getSharedPreferences("learning_todos",0).getString("items","[]"));
+            List<org.json.JSONObject> result=new ArrayList<>();for(int i=0;i<array.length();i++)result.add(array.getJSONObject(i));return result;
+        }catch(org.json.JSONException e){throw new IllegalStateException(AppUi.label(c,"待办读取失败，原数据已保留。请重新打开重试。","Could not load to-dos. Your data is safe. Please retry."),e);}
+    }
+    public static org.json.JSONObject todo(Context c,String id) {for(org.json.JSONObject item:todos(c))if(id.equals(item.optString("id")))return item;return null;}
+    public static Session startTodoFocus(Context c,String id,int seconds,boolean free) {
+        ContentValues v=new ContentValues();v.put("task_id",0);v.put("todo_id",id);v.put("planned_seconds",seconds);v.put("free_focus",free?1:0);
+        Uri uri=c.getContentResolver().insert(TaskProvider.SESSIONS_URI,v);if(uri==null)throw new IllegalStateException(L10n.t(c,"专注未启动"));return session(c,ContentUris.parseId(uri));
+    }
+    public static synchronized boolean completeTodo(Context c,String id) {
+        List<org.json.JSONObject> list=todos(c);boolean found=false;
+        try{for(org.json.JSONObject item:list)if(id.equals(item.optString("id"))){found=true;if(!item.optBoolean("done")){item.put("done",true);item.put("completed_at",System.currentTimeMillis());}break;}}
+        catch(org.json.JSONException e){throw new IllegalStateException(e);}
+        if(found){org.json.JSONArray array=new org.json.JSONArray();for(org.json.JSONObject item:list)array.put(item);c.getSharedPreferences("learning_todos",0).edit().putString("items",array.toString()).apply();}return found;
+    }
+    /** Only mutate the requested ID against fresh storage, never write a stale screen snapshot. */
+    public static synchronized void saveTodo(Context c,org.json.JSONObject value,boolean create) {
+        List<org.json.JSONObject> list=todos(c);String id=value.optString("id");
+        if(id.isEmpty())throw new IllegalArgumentException("Missing to-do ID");
+        boolean found=false;org.json.JSONArray array=new org.json.JSONArray();
+        for(org.json.JSONObject item:list){if(id.equals(item.optString("id"))){array.put(value);found=true;}else array.put(item);}
+        if(!found){if(!create)throw new IllegalStateException(AppUi.label(c,"任务不存在，请刷新页面","Task no longer exists. Please refresh."));array.put(value);}
+        c.getSharedPreferences("learning_todos",0).edit().putString("items",array.toString()).apply();
+    }
+    public static synchronized boolean deleteTodo(Context c,String id) {
+        org.json.JSONArray array=new org.json.JSONArray();boolean found=false;
+        for(org.json.JSONObject item:todos(c)){if(id.equals(item.optString("id")))found=true;else array.put(item);}
+        if(found)c.getSharedPreferences("learning_todos",0).edit().putString("items",array.toString()).apply();
+        return found;
+    }
     public static Session startFree(Context c, String memo) {
         ContentValues v = new ContentValues(); v.put("free_focus", 1); v.put("planned_seconds", 3600 * 24);
         v.put("memo", memo == null ? "" : memo.trim());
@@ -127,6 +159,7 @@ public final class StudyRepository {
     }
     private static Session read(Cursor r) {
         Session s = new Session(); s.id = number(r, "_id"); s.taskId = number(r, "task_id");
+        s.todoId=string(r,"todo_id");
         s.title = string(r, "title_snapshot"); s.owner = string(r, "owner_token");
         s.memo = string(r, "memo");
         s.endedDay = string(r, "ended_day"); s.startedAt = number(r, "started_at");

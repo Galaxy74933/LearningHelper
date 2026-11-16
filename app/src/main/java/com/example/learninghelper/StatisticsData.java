@@ -8,7 +8,8 @@ import java.util.*;
 /** 所有日统计使用本地日历日期；旧数据没有完成日期时不猜测日期。 */
 final class StatisticsData {
     static class CompletedTask {
-        String title, source;
+        String title, source, todoId="";
+        long taskId;
         long completedAt;
         CompletedTask(String title,String source,long time){this.title=title;this.source=source;this.completedAt=time;}
     }
@@ -25,9 +26,9 @@ final class StatisticsData {
         StatisticsData data=new StatisticsData();
         Calendar cal=Calendar.getInstance();data.today=CalendarDates.key(cal.getTimeInMillis());cal.add(Calendar.DAY_OF_MONTH,-6);
         for(int i=0;i<7;i++){data.days[i]=CalendarDates.key(cal.getTimeInMillis());cal.add(Calendar.DAY_OF_MONTH,1);}
-        for(StudyRepository.Task t:StudyRepository.tasks(c))if(t.done)data.completed.add(new CompletedTask(t.title,"任务",t.completedAt));
+        for(StudyRepository.Task t:StudyRepository.tasks(c))if(t.done){CompletedTask item=new CompletedTask(t.title,"任务",t.completedAt);item.taskId=t.id;data.completed.add(item);}
         JSONArray todos=new JSONArray(c.getSharedPreferences("learning_todos",0).getString("items","[]"));
-        for(int i=0;i<todos.length();i++){JSONObject t=todos.getJSONObject(i);if(t.optBoolean("done"))data.completed.add(new CompletedTask(t.optString("title"),"日历待办",t.optLong("completed_at",0)));}
+        for(int i=0;i<todos.length();i++){JSONObject t=todos.getJSONObject(i);if(t.optBoolean("done")){CompletedTask item=new CompletedTask(t.optString("title"),"日历待办",t.optLong("completed_at",0));item.todoId=t.optString("id");data.completed.add(item);}}
         Collections.sort(data.completed,(a,b)->Long.compare(b.completedAt,a.completedAt));
         for(CompletedTask t:data.completed){
             if(t.completedAt<=0){data.unknownDates++;continue;}

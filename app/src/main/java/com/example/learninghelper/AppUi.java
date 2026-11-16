@@ -38,6 +38,7 @@ public final class AppUi {
         BG=dark?0xff12191d:0xfff5f7f8; SURFACE=dark?0xff202a30:Color.WHITE;
         SOFT=blend(SURFACE,GREEN,dark?0.20f:0.12f);
         android.content.res.Configuration config=new android.content.res.Configuration(a.getResources().getConfiguration());
+        config.setLocale(L10n.locale(a));
         config.uiMode=(config.uiMode & ~48)|(dark?32:16);
         a.getResources().updateConfiguration(config,a.getResources().getDisplayMetrics());
         a.setTheme(dark?android.R.style.Theme_Material_NoActionBar:android.R.style.Theme_Material_Light_NoActionBar);
@@ -77,9 +78,7 @@ public final class AppUi {
         if(view instanceof android.widget.CompoundButton)((android.widget.CompoundButton)view).setTextColor(INK);
     }
     public static String label(Context c,String zh,String en) {
-        String language=prefs(c).getString("language","system");
-        boolean english=language.equals("en") || (language.equals("system") && java.util.Locale.getDefault().getLanguage().equals("en"));
-        return english?en:zh;
+        return L10n.english(c)?en:zh;
     }
     public static final int[] DURATIONS = {900,1500,2700,3600,10,30};
     public static final String[] DURATION_LABELS = {"15 分钟","25 分钟","45 分钟","60 分钟","10 秒","30 秒"};
@@ -88,8 +87,8 @@ public final class AppUi {
     public static int dp(Context c, int v) { return Math.round(v*c.getResources().getDisplayMetrics().density); }
     public static void toast(Context c, String message) { Toast.makeText(c,message,Toast.LENGTH_LONG).show(); }
     public static void error(Activity a, Exception e) {
-        new AlertDialog.Builder(a).setTitle("操作未完成").setMessage(e.getMessage()==null?"请重试，并查看 Logcat":e.getMessage())
-                .setPositiveButton("知道了",null).show();
+        new AlertDialog.Builder(a).setTitle(L10n.t(a,"操作未完成")).setMessage(e.getMessage()==null?L10n.t(a,"请重试，并查看 Logcat"):L10n.t(a,e.getMessage()))
+                .setPositiveButton(L10n.t(a,"知道了"),null).show();
     }
     public static TextView text(Context c,String value,int size,int color,boolean bold) {
         TextView v=new TextView(c); v.setText(value);v.setTextSize(size);v.setTextColor(color);
@@ -139,7 +138,7 @@ public final class AppUi {
     }
     public static void navigation(Activity a,Page page,int selected) {
         LinearLayout row=new LinearLayout(a);row.setPadding(dp(a,8),dp(a,4),dp(a,8),dp(a,4));row.setBackgroundColor(SURFACE);
-        String[] labels={label(a,"专注","Focus"),label(a,"日历","Calendar"),label(a,"统计","Stats"),label(a,"设置","Settings")};Class<?>[] classes={MainActivity.class,TodoActivity.class,StatsActivity.class,SettingsActivity.class};
+        String[] labels={label(a,"专注","Focus"),label(a,"待办","To-do"),label(a,"统计","Stats"),label(a,"设置","Settings")};Class<?>[] classes={MainActivity.class,TodoActivity.class,StatsActivity.class,SettingsActivity.class};
         for(int i=0;i<labels.length;i++){
             final int index=i;
             LinearLayout item=new LinearLayout(a);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(android.view.Gravity.CENTER);item.setPadding(0,dp(a,5),0,dp(a,5));
@@ -165,7 +164,7 @@ public final class AppUi {
         }
     }
     public static String duration(int s){return DurationFormat.format(s,durationFormat);}
-    public static String duration(Context c,long seconds){return DurationFormat.format(seconds,prefs(c).getInt("duration_format",0));}
+    public static String duration(Context c,long seconds){return L10n.duration(c,seconds,prefs(c).getInt("duration_format",0));}
     public static int tagColor(Context c,String name){
         int mode=prefs(c).getInt("tag_color",0);if(mode==1)return GREEN;if(mode==2)return INK;
         int[] colors=dark?new int[]{0xff78d5bb,0xff8dbbff,0xffcfabff,0xffffbe87}:new int[]{0xff257868,0xff2868b2,0xff7950a3,0xffa85d22};

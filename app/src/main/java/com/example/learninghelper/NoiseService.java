@@ -44,6 +44,15 @@ public class NoiseService extends Service {
         });
     }
     public static String status(long id) { return activeSessionId == id ? playbackStatus : "声音已关闭"; }
+    public static String status(Context c,long id) {
+        if(activeSessionId!=id)return L10n.t(c,"声音已关闭");
+        if(playbackStatus.startsWith("正在播放："))return L10n.t(c,"正在播放：")+audioName(c,playbackStatus.substring(5));
+        return L10n.t(c,playbackStatus);
+    }
+    private static String audioName(Context c,String value){return value.equals("设备音频")||value.equals("自定义音乐")||value.equals(AppUi.SOUNDS[1])||value.equals(AppUi.SOUNDS[2])||value.equals(AppUi.SOUNDS[3])?L10n.t(c,value):value;}
+    private final SharedPreferences.OnSharedPreferenceChangeListener languageListener=(prefs,key)->{
+        if("language".equals(key))handler.post(()->{FocusCoordinator.channels(this);if(session!=null)getSystemService(NotificationManager.class).notify(NOTICE,notification(session.id,L10n.sessionTitle(this,session)));});
+    };
     public static int sound(long id) { return activeSessionId == id ? activeSound : 0; }
 
     private final BroadcastReceiver noisy = new BroadcastReceiver() {
@@ -51,6 +60,7 @@ public class NoiseService extends Service {
     };
     @Override public void onCreate() {
         super.onCreate();
+        AppUi.prefs(this).registerOnSharedPreferenceChangeListener(languageListener);
         FocusCoordinator.channels(this);
         audioManager = getSystemService(AudioManager.class);
         mediaSession = new MediaSession(this, "FocusStudyAudio");
@@ -74,7 +84,7 @@ public class NoiseService extends Service {
         releasePlayer(); session = null;
         audioLabel=audioUri==null?AppUi.SOUNDS[sound]:AppUi.prefs(this).getString("focus_audio_name","自定义音乐");
         activeSessionId = id; activeSound = sound; playbackStatus = "声音正在加载…";
-        Notification notification = notification(id, "正在准备声音");
+        Notification notification = notification(id,L10n.t(this,"正在准备声音"));
         try {
             if (Build.VERSION.SDK_INT >= 29) startForeground(NOTICE, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
             else startForeground(NOTICE, notification);
@@ -103,9 +113,9 @@ public class NoiseService extends Service {
         PendingIntent action = PendingIntent.getBroadcast(this, 0, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this, FocusCoordinator.PLAYBACK)
                 .setSmallIcon(R.drawable.ic_focus_notification).setContentTitle(title)
-                .setContentText(audioLabel + " · 停止声音不会结束专注")
+                .setContentText(audioName(this,audioLabel) + L10n.t(this," · 停止声音不会结束专注"))
                 .setContentIntent(content).setOngoing(true).setOnlyAlertOnce(true)
-                .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_pause, "停止声音", action).build())
+                .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_pause,L10n.t(this,"停止声音"), action).build())
                 .setStyle(new Notification.MediaStyle().setMediaSession(mediaSession.getSessionToken()).setShowActionsInCompactView(0))
                 .build();
     }
@@ -134,7 +144,7 @@ public class NoiseService extends Service {
                 mediaSession.setPlaybackState(new PlaybackState.Builder().setActions(PlaybackState.ACTION_STOP | PlaybackState.ACTION_PAUSE)
                         .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f).build());
                 mediaSession.setActive(true);
-                getSystemService(NotificationManager.class).notify(NOTICE, notification(session.id, session.title));
+                getSystemService(NotificationManager.class).notify(NOTICE, notification(session.id,L10n.sessionTitle(this,session)));
                 handler.post(tick);
             });
             player.setOnErrorListener((p, what, extra) -> { failed("声音播放失败，计时仍会继续", null); return true; });
@@ -152,7 +162,7 @@ public class NoiseService extends Service {
                     try { FocusCoordinator.finish(getApplicationContext(), current.id, TaskProvider.COMPLETED, true); }
                     catch (Exception e) {
                         Log.e("NoiseService", "记录结算失败", e);
-                        FocusCoordinator.notice(getApplicationContext(), current, "记录暂未保存", "请打开应用重试保存。", true);
+                        FocusCoordinator.notice(getApplicationContext(), current,L10n.t(NoiseService.this,"记录暂未保存"),L10n.t(NoiseService.this,"请打开应用重试保存。"), true);
                         stopMatching(getApplicationContext(), current.id);
                     }
                 });
@@ -167,7 +177,7 @@ public class NoiseService extends Service {
     };
     private void failed(String message, Exception error) {
         if (error != null) Log.e("NoiseService", message, error);
-        AppUi.toast(this, message); stopSelf();
+        AppUi.toast(this,L10n.t(this,message)); stopSelf();
     }
     private void releasePlayer() {
         if (player != null) { player.setOnPreparedListener(null); player.setOnErrorListener(null); player.release(); player = null; }
@@ -179,6 +189,7 @@ public class NoiseService extends Service {
         if (receiverRegistered) unregisterReceiver(noisy);
         mediaSession.release(); stopForeground(STOP_FOREGROUND_REMOVE);
         activeSessionId = -1; activeSound = 0; playbackStatus = "声音已关闭";
+        AppUi.prefs(this).unregisterOnSharedPreferenceChangeListener(languageListener);
         super.onDestroy();
     }
     @Override public IBinder onBind(Intent intent) { return null; }

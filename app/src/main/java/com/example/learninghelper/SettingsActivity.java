@@ -108,7 +108,7 @@ public class SettingsActivity extends WheelActivity {
     private void render(){
         String detail=getIntent().getStringExtra("settings_detail");
         if(detail!=null){renderDetail(detail);return;}
-        page=AppUi.page(this,t("设置","Settings"),t("按你的习惯，安排每一次专注 · 自动保存","Make focus your own · Changes saved automatically"));AppUi.navigation(this,page,3);
+        page=AppUi.page(this,t("设置","Settings"),"");AppUi.navigation(this,page,3);
         profileHeader();
         LinearLayout appearance=section("外观","Appearance");
         LinearLayout display=new LinearLayout(this);display.setGravity(android.view.Gravity.CENTER_VERTICAL);display.addView(AppUi.text(this,t("显示","Display"),16,AppUi.INK,false),new LinearLayout.LayoutParams(AppUi.dp(this,58),-2));
@@ -119,11 +119,10 @@ public class SettingsActivity extends WheelActivity {
         display.post(()->{int width=Math.min(AppUi.dp(this,204),Math.max(1,display.getWidth()-AppUi.dp(this,58)));if(switcher.getLayoutParams().width!=width){switcher.getLayoutParams().width=width;switcher.requestLayout();}});
         preferenceRow(appearance,t("分类和标签的字体色","Category & tag color"),"tag_color",new String[]{t("自适应颜色","Adaptive"),t("主题色","Accent"),t("正文色","Text")},0);
         preferenceRow(appearance,t("主题色","Accent color"),"accent",new String[]{t("森林绿","Forest"),t("海洋蓝","Ocean"),t("紫罗兰","Violet"),t("暖橙色","Amber")},0);
-        preferenceRow(appearance,t("时长显示格式","Duration format"),"duration_format",new String[]{t("时·分·秒","Hours · minutes · seconds"),t("天·时·分·秒","Days · hours · minutes · seconds"),t("分·秒","Minutes · seconds"),"HH:mm:ss"},0);
+        preferenceRow(appearance,t("时长显示格式","Duration format"),"duration_format",new String[]{t("时·分·秒","h · min · s"),t("天·时·分·秒","d · h · min · s"),t("分·秒","min · s"),"HH:mm:ss"},0);
         LinearLayout general=section("通用","General");
         choice(general,t("默认专注时长","Default focus duration"),"duration_index",new String[]{t("15 分钟","15 minutes"),t("25 分钟","25 minutes"),t("45 分钟","45 minutes"),t("60 分钟","60 minutes"),t("10 秒","10 seconds"),t("30 秒","30 seconds")},1,false);
         toggle(general,t("专注页面保持屏幕常亮","Keep screen awake on focus pages"),"keep_awake",false);
-        note(general,"默认时长用于下一次定时专注，不改变正在进行的计时。","The duration applies to the next timed session, not an active timer.");
         LinearLayout audio=section("声音与通知","Sound & notifications");
         choice(audio,t("默认背景声音","Default background sound"),"sound_index",new String[]{t("关闭声音","Off"),t("雨声（合成）","Rain (synthesized)"),t("海浪（合成）","Waves (synthesized)"),t("林间声（合成）","Forest (synthesized)")},0,false);
         TextView volume=AppUi.text(this,"",15,AppUi.INK,false);audio.addView(volume);
@@ -132,16 +131,12 @@ public class SettingsActivity extends WheelActivity {
             public void onStartTrackingTouch(SeekBar s){} public void onStopTrackingTouch(SeekBar s){}
             public void onProgressChanged(SeekBar s,int value,boolean user){if(user){AppUi.prefs(SettingsActivity.this).edit().putInt("audio_volume",value).apply();volume.setText(t("背景音量：","Background volume: ")+value+"%");}}
         });
-        note(audio,"音量在下次播放音频时生效。","Volume applies when audio is next started.");
         toggle(audio,t("允许专注结束提醒","Allow focus reminders"),"reminders",true);
         toggle(audio,t("提醒声音","Reminder sound"),"reminder_sound",true);
         toggle(audio,t("提醒振动","Reminder vibration"),"reminder_vibrate",false);
-        note(audio,FocusCoordinator.notificationsAllowed(this)?"系统通知权限：已开启":"系统通知权限：未开启",FocusCoordinator.notificationsAllowed(this)?"System notifications: allowed":"System notifications: not allowed");
-        note(audio,"提醒仍受系统权限、通知类别与勿扰模式控制。关闭提醒不影响计时；播放音频时仍需要服务通知。本应用不会管理其他软件的消息。","System permissions, channel settings and Do Not Disturb take precedence. Playback requires a service notification. Other apps' messages are not controlled here.");
         external(audio,t("管理系统通知权限","System notification settings"),()->enableNotifications(this));
         LinearLayout language=section("语言","Language");
-        row(language,t("设置与导航语言","Settings & navigation language"),languageValue(),()->openDetail("language"));
-        note(language,"当前支持设置页与底部导航的中英切换；其他页面及用户填写的内容保留原文。","Currently applies to Settings and bottom navigation. Other pages and user content keep their original language.");
+        row(language,t("应用语言","App language"),languageValue(),()->openDetail("language"));
         LinearLayout about=AppUi.card(this);page.content.addView(about);
         LinearLayout aboutRow=row(about,t("关于","About"),versionLabel(),()->openDetail("about"));
         TextView aboutTitle=(TextView)aboutRow.getChildAt(0);
@@ -150,7 +145,7 @@ public class SettingsActivity extends WheelActivity {
         page.scroll.post(()->page.scroll.scrollTo(0,savedScroll));
     }
     private void renderDetail(String detail){
-        String title=detail.equals("about")?t("关于","About"):detail.equals("agreement")?t("用户协议","User agreement"):detail.equals("privacy")?t("隐私政策","Privacy policy"):detail.equals("profile")?t("个人信息","Personal information"):detail.equals("language")?t("设置与导航语言","Settings & navigation language"):detail.equals("website")?t("项目网址","Project website"):detail.equals("reset")?t("恢复默认设置","Reset preferences"):t("使用说明","Usage notes");
+        String title=detail.equals("about")?t("关于","About"):detail.equals("agreement")?t("用户协议","User agreement"):detail.equals("privacy")?t("隐私政策","Privacy policy"):detail.equals("profile")?t("个人信息","Personal information"):detail.equals("language")?t("应用语言","App language"):detail.equals("website")?t("项目网址","Project website"):detail.equals("reset")?t("恢复默认设置","Reset preferences"):t("使用说明","Usage notes");
         page=AppUi.page(this,title,"");
         // 使用同一 Activity 的独立实例，系统返回手势与顶部返回入口都回到设置首页。
         LinearLayout backBar=new LinearLayout(this);backBar.setPadding(AppUi.dp(this,20),0,AppUi.dp(this,20),0);
@@ -178,7 +173,6 @@ public class SettingsActivity extends WheelActivity {
             RadioGroup group=new RadioGroup(this);card.addView(group);
             String current=AppUi.prefs(this).getString("language","system");
             for(int i=0;i<codes.length;i++){final String code=codes[i];RadioButton radio=new RadioButton(this);AppUi.tintControl(radio);radio.setText(labels[i]);radio.setTextColor(AppUi.INK);radio.setTextSize(16);radio.setId(android.view.View.generateViewId());radio.setMinHeight(AppUi.dp(this,56));group.addView(radio);radio.setChecked(current.equals(code));radio.setOnClickListener(v->{AppUi.prefs(this).edit().putString("language",code).apply();render();});}
-            note(card,"当前支持设置页与底部导航的中英切换；其他页面及用户填写的内容保留原文。","Currently applies to Settings and bottom navigation. Other pages and user content keep their original language.");
         }else if(detail.equals("website")){
             LinearLayout card=section("项目网址","Project website");note(card,"填写你的 GitHub 仓库或项目主页，保存后可直接打开。","Enter your GitHub repository or project homepage, then save to open it.");
             EditText input=new EditText(this);AppUi.tintControl(input);input.setSingleLine();input.setTextColor(AppUi.INK);input.setHintTextColor(AppUi.GRAY);input.setHint("https://github.com/...");input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
@@ -265,9 +259,9 @@ public class SettingsActivity extends WheelActivity {
                 options.inSampleSize=1;while(Math.max(options.outWidth,options.outHeight)/options.inSampleSize>512)options.inSampleSize*=2;options.inJustDecodeBounds=false;
                 try(java.io.InputStream in=getContentResolver().openInputStream(uri)){bitmap=android.graphics.BitmapFactory.decodeStream(in,null,options);}
             }
-            if(bitmap==null)throw new IllegalArgumentException("图片无法读取，请重新选择");
+            if(bitmap==null)throw new IllegalArgumentException(t("图片无法读取，请重新选择","Could not read the image. Please choose another."));
             android.util.AtomicFile file=new android.util.AtomicFile(avatarFile());java.io.FileOutputStream stream=null;
-            try{stream=file.startWrite();if(!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,stream))throw new java.io.IOException("头像保存失败");file.finishWrite(stream);}
+            try{stream=file.startWrite();if(!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,stream))throw new java.io.IOException(t("头像保存失败","Could not save the profile picture"));file.finishWrite(stream);}
             catch(Exception e){if(stream!=null)file.failWrite(stream);throw e;}finally{bitmap.recycle();}
             return true;
         },ok->{render();AppUi.toast(this,t("头像已更新","Picture updated"));},e->AppUi.error(this,e));

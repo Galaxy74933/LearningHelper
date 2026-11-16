@@ -21,8 +21,8 @@ public final class FocusCoordinator {
     public static final int RESULT_NOTICE=2002;
     public static void channels(Context c){
         NotificationManager nm=c.getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(new NotificationChannel(REMINDERS,"专注结束提醒",NotificationManager.IMPORTANCE_DEFAULT));
-        nm.createNotificationChannel(new NotificationChannel(PLAYBACK,"白噪音播放",NotificationManager.IMPORTANCE_LOW));
+        nm.createNotificationChannel(new NotificationChannel(REMINDERS,L10n.t(c,"专注结束提醒"),NotificationManager.IMPORTANCE_DEFAULT));
+        nm.createNotificationChannel(new NotificationChannel(PLAYBACK,L10n.t(c,"白噪音播放"),NotificationManager.IMPORTANCE_LOW));
     }
     public static boolean notificationsAllowed(Context c){
         return (Build.VERSION.SDK_INT<33||c.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED)
@@ -47,13 +47,13 @@ public final class FocusCoordinator {
     public static StudyRepository.Session finish(Context c,long id,int requested,boolean notify){
         int changed=StudyRepository.updateStatus(c,id,requested);
         StudyRepository.Session s=StudyRepository.session(c,id);
-        if(s==null||s.status==TaskProvider.RUNNING)throw new IllegalStateException("记录未能结算，请重试");
+        if(s==null||s.status==TaskProvider.RUNNING)throw new IllegalStateException(L10n.t(c,"记录未能结算，请重试"));
         try { cancel(c,id); }
         catch (RuntimeException e) { Log.w("FocusAlarm", "记录已保存，但取消提醒失败", e); }
         NoiseService.stopMatching(c,id);
         if(changed>0&&notify){
-            String title=s.status==TaskProvider.COMPLETED?"专注完成":"专注已结束";
-            String body=s.title+" · "+AppUi.duration(s.actual);
+            String title=s.status==TaskProvider.COMPLETED?L10n.t(c,"专注完成"):L10n.t(c,"专注已结束");
+            String body=L10n.sessionTitle(c,s)+" · "+AppUi.duration(c,s.actual);
             notice(c,s,title,body,false);
         }
         return s;
@@ -62,7 +62,7 @@ public final class FocusCoordinator {
         channels(c);if(!notificationsAllowed(c) || !AppUi.prefs(c).getBoolean("reminders",true))return;
         boolean audible=AppUi.prefs(c).getBoolean("reminder_sound",true), vibrate=AppUi.prefs(c).getBoolean("reminder_vibrate",false);
         String channel=REMINDERS+"_"+audible+"_"+vibrate;
-        NotificationChannel configured=new NotificationChannel(channel,"专注提醒 · "+(audible?"有声":"静音")+(vibrate?" · 振动":""),NotificationManager.IMPORTANCE_DEFAULT);
+        NotificationChannel configured=new NotificationChannel(channel,L10n.t(c,"专注提醒 · ")+(audible?L10n.t(c,"有声"):L10n.t(c,"静音"))+(vibrate?L10n.t(c," · 振动"):""),NotificationManager.IMPORTANCE_DEFAULT);
         if(!audible)configured.setSound(null,null);
         configured.enableVibration(vibrate);
         c.getSystemService(NotificationManager.class).createNotificationChannel(configured);
