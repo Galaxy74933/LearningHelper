@@ -34,12 +34,12 @@ public final class StudyRepository {
             }
         });
     }
-    public static class Task { public long id; public String title, note; public boolean done; }
+    public static class Task { public long id, completedAt; public String title, note; public boolean done; }
     public static class Session {
         public long id, taskId, startedAt, startedElapsed, endedAt;
         public String title, owner, endedDay, memo;
         public int planned, actual, status;
-        public boolean demo;
+        public boolean demo, free;
         public boolean owned() { return TaskProvider.PROCESS_TOKEN.equals(owner); }
         public long remaining() { return TimerMath.remainingMillis(startedElapsed, planned, SystemClock.elapsedRealtime()); }
     }
@@ -51,7 +51,7 @@ public final class StudyRepository {
             if (r == null) throw new IllegalStateException("任务读取失败");
             while (r.moveToNext()) {
                 Task t = new Task(); t.id = number(r, "_id"); t.title = string(r, "title");
-                t.note = string(r, "note"); t.done = number(r, "done") == 1; list.add(t);
+                t.note = string(r, "note"); t.done = number(r, "done") == 1; t.completedAt = number(r, "completed_at"); list.add(t);
             }
         }
         return list;
@@ -74,6 +74,10 @@ public final class StudyRepository {
         if (current != null) throw new IllegalStateException("进行中的专注不能删除，请先结束专注");
         return false; // 记录已被删除时只刷新，不误报成功删除其他数据。
     }
+    public static void discardSession(Context c,long id) {
+        int count=c.getContentResolver().delete(sessionUri(id).buildUpon().appendQueryParameter("discard","true").build(),null,null);
+        if(count==0&&session(c,id)!=null)throw new IllegalStateException("未能放弃本次专注，请重试");
+    }
     private static void require(int n) { if (n != 1) throw new IllegalStateException("任务不存在，请刷新页面"); }
     public static Session running(Context c) {
         try (Cursor r = c.getContentResolver().query(TaskProvider.SESSIONS_URI, null, "status=0", null, null)) {
@@ -94,6 +98,12 @@ public final class StudyRepository {
         Session s = session(c, ContentUris.parseId(uri));
         if (s == null) throw new IllegalStateException("无法读取新建专注");
         return s;
+    }
+    public static Session startFocus(Context c,long taskId,int seconds,boolean free) {
+        ContentValues v=new ContentValues();v.put("task_id",Math.max(0,taskId));v.put("planned_seconds",seconds);v.put("free_focus",free?1:0);
+        Uri uri=c.getContentResolver().insert(TaskProvider.SESSIONS_URI,v);
+        if(uri==null)throw new IllegalStateException("专注未启动");
+        return session(c,ContentUris.parseId(uri));
     }
     public static Session startFree(Context c, String memo) {
         ContentValues v = new ContentValues(); v.put("free_focus", 1); v.put("planned_seconds", 3600 * 24);
@@ -122,7 +132,7 @@ public final class StudyRepository {
         s.endedDay = string(r, "ended_day"); s.startedAt = number(r, "started_at");
         s.startedElapsed = number(r, "started_elapsed"); s.endedAt = number(r, "ended_at");
         s.planned = (int) number(r, "planned_seconds"); s.actual = (int) number(r, "actual_seconds");
-        s.status = (int) number(r, "status"); s.demo = number(r, "is_demo") == 1;
+        s.free = number(r, "free_focus") == 1; s.status = (int) number(r, "status"); s.demo = number(r, "is_demo") == 1;
         return s;
     }
     private static long number(Cursor c, String key) { return c.getLong(c.getColumnIndexOrThrow(key)); }

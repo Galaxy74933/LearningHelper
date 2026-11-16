@@ -35,6 +35,7 @@ public final class FocusCoordinator {
     }
     public static boolean schedule(Context c,StudyRepository.Session s){
         if(s==null||s.status!=TaskProvider.RUNNING||!s.owned())return false;
+        if(s.free)return true;
         try{
             c.getSystemService(AlarmManager.class).setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,
                     s.startedElapsed+s.planned*1000L,alarmIntent(c,s.id));return true;

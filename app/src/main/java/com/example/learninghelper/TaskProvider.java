@@ -75,6 +75,7 @@ public class TaskProvider extends ContentProvider {
             ContentValues v = taskValues(input, true);
             v.put("created_at", System.currentTimeMillis());
             v.put("deleted", 0);
+            v.put("completed_at", v.getAsInteger("done") == 1 ? System.currentTimeMillis() : 0L);
             long id = helper.getWritableDatabase().insertOrThrow("tasks", null, v);
             result = ContentUris.withAppendedId(CONTENT_URI, id);
         } else if (m == 3) {
@@ -93,6 +94,12 @@ public class TaskProvider extends ContentProvider {
             try {
                 checkIdle(db, ContentUris.parseId(uri));
                 ContentValues v = taskValues(input, false);
+                if (v.containsKey("done")) {
+                    try (Cursor c = db.query("tasks", new String[]{"done"}, where(uri, selection), args, null, null, null)) {
+                        if (c.moveToFirst() && c.getInt(0) != v.getAsInteger("done"))
+                            v.put("completed_at", v.getAsInteger("done") == 1 ? System.currentTimeMillis() : 0L);
+                    }
+                }
                 count = v.size() == 0 ? 0 : db.update("tasks", v, where(uri, selection), args);
                 db.setTransactionSuccessful();
             } finally { db.endTransaction(); }
@@ -104,6 +111,13 @@ public class TaskProvider extends ContentProvider {
     @Override public int delete(Uri uri, String selection, String[] args) {
         int match = MATCHER.match(uri);
         if (match == 4) {
+            if ("true".equals(uri.getQueryParameter("discard"))) {
+                // 显式放弃本次专注，原子移除暂存记录，不先结算为学习记录。
+                int count=helper.getWritableDatabase().delete("sessions", "_id=? AND owner_token=?",
+                        new String[]{String.valueOf(ContentUris.parseId(uri)),PROCESS_TOKEN});
+                if(count>0)changed();
+                return count;
+            }
             // 仅允许删除指定的已结束记录；进行中的专注不能被删除。
             int count = helper.getWritableDatabase().delete("sessions",
                     where(uri, selection) + " AND status != 0", args);
@@ -161,9 +175,10 @@ public class TaskProvider extends ContentProvider {
         Long task = input == null ? null : input.getAsLong("task_id");
         Integer duration = input == null ? null : input.getAsInteger("planned_seconds");
         boolean free = input != null && input.getAsInteger("free_focus") != null && input.getAsInteger("free_focus") == 1;
-        if ((!free && task == null) || duration == null || (!free && duration != 10 && duration != 30 && duration != 900
-                && duration != 1500 && duration != 2700 && duration != 3600))
-            throw new IllegalArgumentException("请选择任务和有效时长");
+        if (task == null) task = 0L;
+        if (task < 0 || duration == null || (!free && (duration < 1 || duration > 10800)))
+            throw new IllegalArgumentException("请选择 1 秒至 180 分钟的时长");
+        if (free) duration = Integer.MAX_VALUE;
         SQLiteDatabase db = helper.getWritableDatabase();
         db.beginTransaction();
         try {
@@ -175,15 +190,15 @@ public class TaskProvider extends ContentProvider {
                     return ContentUris.withAppendedId(SESSIONS_URI, id);
                 }
             }
-            String title = "自由专注";
-            if (!free) try (Cursor c = db.query("tasks", new String[]{"title"},
+            String title = free ? "自由专注" : "倒计时专注";
+            if (task > 0) try (Cursor c = db.query("tasks", new String[]{"title"},
                     "_id=? AND done=0 AND deleted=0", new String[]{String.valueOf(task)},
                     null, null, null)) {
                 if (!c.moveToFirst()) throw new IllegalStateException("任务不存在或已经完成");
                 title = c.getString(0);
             }
             ContentValues v = new ContentValues();
-            v.put("task_id", free ? 0 : task); v.put("title_snapshot", title);
+            v.put("free_focus", free ? 1 : 0); v.put("task_id", task); v.put("title_snapshot", title);
             v.put("planned_seconds", duration); v.put("actual_seconds", 0);
             v.put("started_at", System.currentTimeMillis());
             v.put("started_elapsed", SystemClock.elapsedRealtime());
@@ -236,17 +251,19 @@ public class TaskProvider extends ContentProvider {
     }
 
     private static class DatabaseHelper extends SQLiteOpenHelper {
-        DatabaseHelper(Context c) { super(c, "learning_helper.db", null, 4); }
+        DatabaseHelper(Context c) { super(c, "learning_helper.db", null, 6); }
         @Override public void onCreate(SQLiteDatabase db) {
             db.execSQL("CREATE TABLE tasks (_id INTEGER PRIMARY KEY AUTOINCREMENT,"
                     + "title TEXT NOT NULL,note TEXT NOT NULL DEFAULT '',done INTEGER NOT NULL DEFAULT 0,"
-                    + "deleted INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL)");
+                    + "deleted INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,completed_at INTEGER NOT NULL DEFAULT 0)");
             sessions(db);
         }
         @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
             if (oldVersion < 2) sessions(db);
             if (oldVersion == 2) db.execSQL("ALTER TABLE sessions ADD COLUMN memo TEXT NOT NULL DEFAULT ''");
             if (oldVersion < 4) db.execSQL("UPDATE sessions SET is_demo=0 WHERE planned_seconds IN (10,30)");
+            if (oldVersion >= 2 && oldVersion < 6) { db.execSQL("ALTER TABLE sessions ADD COLUMN free_focus INTEGER NOT NULL DEFAULT 0"); db.execSQL("UPDATE sessions SET free_focus=1 WHERE task_id=0"); }
+            if (oldVersion < 5) db.execSQL("ALTER TABLE tasks ADD COLUMN completed_at INTEGER NOT NULL DEFAULT 0");
         }
         private void sessions(SQLiteDatabase db) {
             db.execSQL("CREATE TABLE IF NOT EXISTS sessions (_id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -254,7 +271,7 @@ public class TaskProvider extends ContentProvider {
                     + "actual_seconds INTEGER NOT NULL DEFAULT 0,started_at INTEGER NOT NULL,"
                     + "started_elapsed INTEGER NOT NULL,ended_at INTEGER NOT NULL DEFAULT 0,"
                     + "ended_day TEXT NOT NULL DEFAULT '',status INTEGER NOT NULL DEFAULT 0,"
-                    + "is_demo INTEGER NOT NULL DEFAULT 0,owner_token TEXT NOT NULL,memo TEXT NOT NULL DEFAULT '')");
+                    + "is_demo INTEGER NOT NULL DEFAULT 0,free_focus INTEGER NOT NULL DEFAULT 0,owner_token TEXT NOT NULL,memo TEXT NOT NULL DEFAULT '')");
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS one_running_session ON sessions(status) WHERE status=0");
         }
     }

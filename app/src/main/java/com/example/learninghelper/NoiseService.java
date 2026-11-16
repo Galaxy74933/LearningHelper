@@ -24,6 +24,7 @@ public class NoiseService extends Service {
     private AudioFocusRequest focusRequest;
     private StudyRepository.Session session;
     private int generation;
+    private String audioLabel;
     private boolean receiverRegistered;
 
     public static void play(Context c, long id, int sound) {
@@ -71,6 +72,7 @@ public class NoiseService extends Service {
         final int token = ++generation;
         handler.removeCallbacks(tick);
         releasePlayer(); session = null;
+        audioLabel=audioUri==null?AppUi.SOUNDS[sound]:AppUi.prefs(this).getString("focus_audio_name","自定义音乐");
         activeSessionId = id; activeSound = sound; playbackStatus = "声音正在加载…";
         Notification notification = notification(id, "正在准备声音");
         try {
@@ -101,7 +103,7 @@ public class NoiseService extends Service {
         PendingIntent action = PendingIntent.getBroadcast(this, 0, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this, FocusCoordinator.PLAYBACK)
                 .setSmallIcon(R.drawable.ic_focus_notification).setContentTitle(title)
-                .setContentText(AppUi.SOUNDS[activeSound] + " · 停止声音不会结束专注")
+                .setContentText(audioLabel + " · 停止声音不会结束专注")
                 .setContentIntent(content).setOngoing(true).setOnlyAlertOnce(true)
                 .addAction(new Notification.Action.Builder(android.R.drawable.ic_media_pause, "停止声音", action).build())
                 .setStyle(new Notification.MediaStyle().setMediaSession(mediaSession.getSessionToken()).setShowActionsInCompactView(0))
@@ -118,7 +120,7 @@ public class NoiseService extends Service {
             failed("其他应用正在使用音频，请稍后重新打开声音", null); return;
         }
         int[] ids = {0, R.raw.rain, R.raw.waves, R.raw.forest};
-        try (AssetFileDescriptor asset = getResources().openRawResourceFd(ids[sound])) {
+        try (AssetFileDescriptor asset = audioUri==null?getResources().openRawResourceFd(ids[sound]):null) {
             player = new MediaPlayer();
             player.setAudioAttributes(attributes);
             player.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
@@ -128,7 +130,7 @@ public class NoiseService extends Service {
             player.setOnPreparedListener(p -> {
                 if (token != generation || player != p) return;
                 if (session == null || session.remaining() == 0) { handler.post(tick); return; }
-                p.start(); playbackStatus = "正在播放：" + AppUi.SOUNDS[sound];
+                p.start(); playbackStatus = "正在播放：" + audioLabel;
                 mediaSession.setPlaybackState(new PlaybackState.Builder().setActions(PlaybackState.ACTION_STOP | PlaybackState.ACTION_PAUSE)
                         .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f).build());
                 mediaSession.setActive(true);

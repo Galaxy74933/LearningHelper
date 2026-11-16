@@ -14,6 +14,13 @@ import java.util.*;
 public class FocusActivity extends WheelActivity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private AppUi.Page page;
+    private boolean freeMode;
+    private int chosenSeconds=1500;
+    private String taskTitle="不关联任务";
+    private List<StudyRepository.Task> tasks=new ArrayList<>();
+    private FocusOptions soundOptions;
+    private static final int PICK_AUDIO=44;
+
     private StudyRepository.Session session;
     private TextView countdown, soundState, hint;
     private Button endButton;
@@ -26,12 +33,16 @@ public class FocusActivity extends WheelActivity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         readIntent();
+        FocusCoordinator.channels(this);
+        freeMode=getIntent().getBooleanExtra("free_mode",false);
         durationIndex = AppUi.prefs(this).getInt("duration_index", 1);
         selectedSound = AppUi.prefs(this).getInt("sound_index", 0);
+        chosenSeconds=AppUi.DURATIONS[Math.max(0,Math.min(AppUi.DURATIONS.length-1,durationIndex))];
         if (state != null) {
             requestedSession = state.getLong("session_id", requestedSession);
             durationIndex = state.getInt("duration_index", durationIndex);
             selectedSound = state.getInt("sound_index", selectedSound);
+            freeMode=state.getBoolean("free_mode",freeMode);chosenSeconds=state.getInt("seconds",chosenSeconds);taskId=state.getLong("selected_task",taskId);
         }
     }
     private void readIntent() {
@@ -47,6 +58,7 @@ public class FocusActivity extends WheelActivity {
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         out.putLong("session_id", session == null ? requestedSession : session.id);
+        out.putBoolean("free_mode",freeMode);out.putInt("seconds",chosenSeconds);out.putLong("selected_task",taskId);
         out.putInt("duration_index", durationIndex); out.putInt("sound_index", selectedSound);
     }
     @Override protected void onResume() { super.onResume(); visible = true; load(); }
@@ -60,32 +72,32 @@ public class FocusActivity extends WheelActivity {
     private static class ScreenData {
         StudyRepository.Session session;
         StudyRepository.Task task;
+        List<StudyRepository.Task> tasks;
     }
     private void load() {
         if (busy) return;
         int version = ++loadVersion;
         handler.removeCallbacks(tick);
         page = AppUi.page(this, "专注学习", "专注一件事，按自己的节奏完成");
+        AppUi.navigation(this,page,0);
         page.content.addView(AppUi.text(this, "正在读取专注状态…", 16, AppUi.GRAY, false));
         StudyRepository.run(this, () -> {
             ScreenData d = new ScreenData();
             // 无论从哪个任务进入，都优先返回唯一的进行中记录。
             d.session = StudyRepository.running(this);
             if (d.session == null && requestedSession >= 0) d.session = StudyRepository.session(this, requestedSession);
-            if (d.session == null) for (StudyRepository.Task t : StudyRepository.tasks(this)) if (t.id == taskId && !t.done) d.task = t;
+            d.tasks=StudyRepository.tasks(this);
+            if (d.session == null) for (StudyRepository.Task t : d.tasks) if (t.id == taskId && !t.done) d.task = t;
             return d;
         }, d -> {
             if (version != loadVersion) return;
-            session = d.session;
+            session = d.session; tasks=d.tasks;
             if (session != null) {
                 requestedSession = session.id;
                 if (session.status == TaskProvider.RUNNING && session.owned()) FocusCoordinator.schedule(this, session);
                 renderSession();
             }
-            else if (d.task != null) renderSetup(d.task);
-            else {
-                page.content.removeAllViews(); page.content.addView(AppUi.text(this, "请先到首页选择一个待完成任务。", 18, AppUi.INK, false)); homeButton();
-            }
+            else {if(d.task!=null){taskId=d.task.id;taskTitle=d.task.title;}else{taskId=0;taskTitle="不关联任务";}renderSetup(d.task);}
         }, e -> {
             if (version != loadVersion) return;
             page.content.removeAllViews(); Button retry = AppUi.button(this, "读取失败，点击重试", true);
@@ -99,80 +111,135 @@ public class FocusActivity extends WheelActivity {
         s.setSelection(Math.max(0, Math.min(selection, values.length - 1)));
         page.content.addView(s, new LinearLayout.LayoutParams(-1, AppUi.dp(this, 52))); return s;
     }
-    private void renderSetup(StudyRepository.Task task) {
+    private void renderSetup(StudyRepository.Task task) { renderFocus(false); }
+    private void renderFocus(boolean running){
+        handler.removeCallbacks(tick);
         page.content.removeAllViews();
-        page.content.addView(AppUi.text(this, task.title, 26, AppUi.INK, true));
-        if (!task.note.isEmpty()) page.content.addView(AppUi.text(this, task.note, 16, AppUi.GRAY, false));
-        AppUi.space(page.content, 16);
-        page.content.addView(AppUi.text(this, "本次时长", 16, AppUi.INK, true));
-        Spinner durations = spinner(AppUi.DURATION_LABELS, durationIndex);
-        page.content.addView(AppUi.text(this, "本次声音", 16, AppUi.INK, true));
-        Spinner sounds = spinner(AppUi.SOUNDS, selectedSound);
-        durations.setOnItemSelectedListener(new Choice() { @Override public void chosen(int pos) { durationIndex = pos; } });
-        sounds.setOnItemSelectedListener(new Choice() { @Override public void chosen(int pos) { selectedSound = pos; } });
-        permissionHint();
-        Button start = AppUi.button(this, "开始专注", true); page.content.addView(start);
-        start.setOnClickListener(v -> {
-            if (busy) return;
-            busy = true; start.setEnabled(false);
-            int seconds = AppUi.DURATIONS[durationIndex], sound = selectedSound;
-            android.content.Context app = getApplicationContext();
-            StudyRepository.run(this, () -> {
-                StudyRepository.Session s = StudyRepository.start(app, task.id, seconds);
-                FocusCoordinator.schedule(app, s);
-                return s;
-            }, s -> {
-                busy = false; session = s; requestedSession = s.id; failedSave = false; resultShown = false;
-                boolean scheduled = FocusCoordinator.schedule(this, s);
-                renderSession();
-                if (!scheduled && s.owned()) AppUi.toast(this, "后台提醒未安排成功；请保持应用打开或稍后返回检查。");
-                if (visible && s.owned() && s.status == TaskProvider.RUNNING && s.remaining() > 0) play(sound);
-            }, e -> { busy = false; start.setEnabled(true); AppUi.error(this, e); });
-        });
-        homeButton();
-    }
-    private void renderSession() {
-        handler.removeCallbacks(tick); page.content.removeAllViews();
-        page.content.addView(AppUi.text(this, session.title, 26, AppUi.INK, true));
-        page.content.addView(AppUi.text(this, "计划 " + AppUi.duration(session.planned), 15, AppUi.GREEN, false));
-        if (session.status != TaskProvider.RUNNING) { renderResult(); return; }
-        if (!session.owned()) {
-            page.content.addView(AppUi.text(this, "发现上次未结束的专注。应用进程曾退出，无法确认期间的学习时间。确认后保存为“异常中断”，保留最后保存的 " + AppUi.duration(session.actual) + "，不计入正式统计。", 17, AppUi.INK, false));
-            endButton = AppUi.button(this, "确认中断并保存", true); page.content.addView(endButton);
-            endButton.setOnClickListener(v -> finishSession(TaskProvider.INTERRUPTED)); homeButton(); return;
-        }
-        LinearLayout timerBox = new LinearLayout(this); timerBox.setGravity(Gravity.CENTER); timerBox.setPadding(0,AppUi.dp(this,24),0,AppUi.dp(this,24));
-        FrameLayout ring = new FrameLayout(this); ring.setTag("focus_ring"); int ringSize=AppUi.dp(this,260); ring.addView(new FocusRingView(this),new FrameLayout.LayoutParams(-1,-1));
+        FocusOptions modes=new FocusOptions(this,new String[]{"倒计时","正计时"},freeMode?1:0,index->{freeMode=index==1;countdown.setText(time(freeMode?0:chosenSeconds));countdown.setContentDescription(freeMode?"已专注时长":"选择专注时长");View ring=page.content.findViewWithTag("focus_ring");if(ring instanceof FrameLayout)((FrameLayout)ring).getChildAt(0).invalidate();TextView label=page.content.findViewWithTag("timer_label");if(label!=null)label.setText(freeMode?"记录每一刻专注":"点击数字调整时长");hint.setText(freeMode?"无需设置时长，结束时保存实际专注时间。":"准备好后，开始这一次专注。");});
+        modes.setEnabled(!running&&!busy);page.content.addView(modes,new LinearLayout.LayoutParams(-1,AppUi.dp(this,48)));
+        AppUi.space(page.content,22);
+        TextView task=AppUi.text(this,(running?session.title:taskTitle)+"  ›",20,AppUi.INK,true);task.setGravity(Gravity.CENTER);task.setMinHeight(AppUi.dp(this,48));task.setMaxLines(2);task.setFocusable(true);task.setContentDescription("选择任务");task.setOnClickListener(v->{if(!running&&!busy)chooseTask();else AppUi.toast(this,"本次任务已锁定，结束后可重新选择");});page.content.addView(task,new LinearLayout.LayoutParams(-1,-2));
+        AppUi.space(page.content,14);
+        soundOptions=new FocusOptions(this,new String[]{"雨声","海浪","林间","自定义","关闭"},soundPosition(),index->{
+            if(index==3){chooseMusic();return;}selectedSound=index==4?0:index+1;if(running)play(selectedSound);
+        });page.content.addView(soundOptions,new LinearLayout.LayoutParams(-1,AppUi.dp(this,46)));
+        soundState=AppUi.text(this,running?NoiseService.status(session.id):selectedSound==4?"已选择："+AppUi.prefs(this).getString("focus_audio_name","自定义音乐"):"开始专注时播放所选声音",12,AppUi.GRAY,false);soundState.setGravity(Gravity.CENTER);page.content.addView(soundState,new LinearLayout.LayoutParams(-1,AppUi.dp(this,32)));
+        FrameLayout ring=new FrameLayout(this);ring.setTag("focus_ring");ring.addView(new FocusRingView(this),new FrameLayout.LayoutParams(-1,-1));
         LinearLayout center=new LinearLayout(this);center.setGravity(Gravity.CENTER);center.setOrientation(LinearLayout.VERTICAL);
-        countdown = AppUi.text(this, "", 48, AppUi.INK, true); countdown.setGravity(Gravity.CENTER);
-        center.addView(countdown,new LinearLayout.LayoutParams(-1,-2));TextView planLabel=AppUi.text(this,"计划专注 "+AppUi.duration(session.planned),15,AppUi.GRAY,false);planLabel.setGravity(Gravity.CENTER);center.addView(planLabel,new LinearLayout.LayoutParams(-1,-2));ring.addView(center,new FrameLayout.LayoutParams(-1,-1));
-        timerBox.addView(ring,new LinearLayout.LayoutParams(ringSize,ringSize));page.content.addView(timerBox);AppUi.space(page.content,8);
-        hint = AppUi.text(this, "锁屏或省电模式下提醒可能延迟，返回应用会校准时间。", 14, AppUi.GRAY, false); page.content.addView(hint);
-        page.content.addView(AppUi.text(this,"先把注意力放在眼前这一件事上",16,AppUi.GRAY,false));
-        AppUi.space(page.content,12);page.content.addView(AppUi.text(this,"背景声音",18,AppUi.INK,true));
-        LinearLayout soundRow=new LinearLayout(this);String[] labels={"雨声","海浪","森林","关闭"};
-        for(int i=0;i<labels.length;i++){final int soundIndex=i;Button b=AppUi.button(this,labels[i],NoiseService.sound(session.id)==i+1);b.setTextSize(13);AppUi.weighted(soundRow,b);b.setOnClickListener(v->{selectedSound=soundIndex==3?0:soundIndex+1;play(selectedSound);updateSoundButtons(soundRow);});}
-        page.content.addView(soundRow);
-        soundState = AppUi.text(this, NoiseService.status(session.id), 16, AppUi.INK, false); page.content.addView(soundState);
-        permissionHint();
-        endButton = AppUi.button(this, failedSave ? "重试保存记录" : "提前结束", false); page.content.addView(endButton);
-        endButton.setOnClickListener(v -> {
-            if (session.remaining() == 0) { finishSession(TaskProvider.COMPLETED); return; }
-            new AlertDialog.Builder(this).setTitle("提前结束本次专注？")
-                    .setMessage("会保存已专注的时间，但不计入完成统计。")
-                    .setNegativeButton("继续专注", null).setPositiveButton("结束并保存", (dialog, which) -> finishSession(TaskProvider.EARLY_END)).show();
+        countdown=AppUi.text(this,time(running?(freeMode?Math.max(0,SystemClock.elapsedRealtime()-session.startedElapsed)/1000:(session.remaining()+999)/1000):(freeMode?0:chosenSeconds)),46,AppUi.INK,true);countdown.setGravity(Gravity.CENTER);countdown.setMaxLines(1);countdown.setAutoSizeTextTypeUniformWithConfiguration(24,46,1,android.util.TypedValue.COMPLEX_UNIT_SP);
+        countdown.setContentDescription(freeMode?"已专注时长":"选择专注时长");countdown.setFocusable(!freeMode&&!running);countdown.setOnClickListener(v->{if(!freeMode&&!running&&!busy)chooseDuration();});
+        center.addView(countdown,new LinearLayout.LayoutParams(-1,AppUi.dp(this,66)));TextView label=AppUi.text(this,freeMode?"记录每一刻专注":running?"正在专注":"点击数字调整时长",14,AppUi.GRAY,false);label.setTag("timer_label");label.setGravity(Gravity.CENTER);center.addView(label);ring.addView(center,new FrameLayout.LayoutParams(-1,-1));
+        int width=getResources().getDisplayMetrics().widthPixels-AppUi.dp(this,48);int size=Math.min(AppUi.dp(this,304),width);
+        LinearLayout.LayoutParams circle=new LinearLayout.LayoutParams(size,size);circle.gravity=Gravity.CENTER_HORIZONTAL;circle.topMargin=AppUi.dp(this,14);circle.bottomMargin=AppUi.dp(this,24);page.content.addView(ring,circle);
+        hint=AppUi.text(this,running?"计时中可切换音乐；返回后继续计时。":freeMode?"无需设置时长，结束时保存实际专注时间。":"准备好后，开始这一次专注。",13,AppUi.GRAY,false);hint.setGravity(Gravity.CENTER);page.content.addView(hint);
+        endButton=AppUi.button(this,running?(failedSave?"重试保存记录":freeMode?"结束并保存":"提前结束"):"开始专注",true);
+        android.graphics.drawable.GradientDrawable buttonBg=new android.graphics.drawable.GradientDrawable();buttonBg.setColor(AppUi.SOFT);buttonBg.setCornerRadius(AppUi.dp(this,28));endButton.setBackgroundTintList(null);endButton.setBackground(buttonBg);endButton.setTextColor(AppUi.GREEN);
+        LinearLayout.LayoutParams action=new LinearLayout.LayoutParams(AppUi.dp(this,190),AppUi.dp(this,54));action.gravity=Gravity.CENTER_HORIZONTAL;action.topMargin=AppUi.dp(this,18);page.content.addView(endButton,action);endButton.setEnabled(!busy);
+        endButton.setOnClickListener(v->{if(busy)return;if(!running){startFocus();return;}if(!freeMode&&session.remaining()==0){finishSession(TaskProvider.COMPLETED);return;}confirmEnd();});
+        AppUi.space(page.content,12);
+        if(running&&visible)handler.post(tick);
+    }
+    private String time(long seconds){return seconds>=3600?String.format(Locale.US,"%02d:%02d:%02d",seconds/3600,seconds/60%60,seconds%60):String.format(Locale.US,"%02d:%02d",seconds/60,seconds%60);}
+    private int soundPosition(){return selectedSound==0?4:selectedSound==4?3:selectedSound-1;}
+    private Dialog optionSheet(String title,LinearLayout content){
+        Dialog dialog=new Dialog(this);LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(AppUi.dp(this,20),AppUi.dp(this,16),AppUi.dp(this,20),AppUi.dp(this,16));
+        android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(AppUi.SURFACE);bg.setCornerRadius(AppUi.dp(this,24));panel.setBackground(bg);
+        TextView heading=AppUi.text(this,title,22,AppUi.INK,true);heading.setGravity(Gravity.CENTER);panel.addView(heading);AppUi.space(panel,16);
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.addView(content);panel.addView(scroll,new LinearLayout.LayoutParams(-1,-2));
+        Button close=AppUi.button(this,"取消",false);close.setOnClickListener(v->dialog.dismiss());panel.addView(close);
+        dialog.setContentView(panel);dialog.show();android.view.Window window=dialog.getWindow();if(window!=null){window.setBackgroundDrawableResource(android.R.color.transparent);window.setGravity(Gravity.BOTTOM);window.setLayout(-1,-2);}
+        panel.post(()->{int max=getResources().getDisplayMetrics().heightPixels/2;if(scroll.getHeight()>max){scroll.getLayoutParams().height=max;scroll.requestLayout();}});
+        return dialog;
+    }
+    private void sheetOption(LinearLayout list,String title,String subtitle,boolean selected,Runnable action){
+        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.VERTICAL);row.setPadding(AppUi.dp(this,16),AppUi.dp(this,14),AppUi.dp(this,16),AppUi.dp(this,14));
+        android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(selected?AppUi.SOFT:AppUi.BG);bg.setCornerRadius(AppUi.dp(this,14));
+        row.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf((AppUi.GREEN&0xffffff)|0x22000000),bg,null));
+        row.addView(AppUi.text(this,(selected?"✓  ":"")+title,17,selected?AppUi.GREEN:AppUi.INK,true));if(!subtitle.isEmpty())row.addView(AppUi.text(this,subtitle,13,AppUi.GRAY,false));
+        row.setFocusable(true);row.setOnClickListener(v->action.run());LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=AppUi.dp(this,8);list.addView(row,lp);
+    }
+    private void chooseTask(){
+        StudyRepository.run(this,()->StudyRepository.tasks(this),list->{
+            LinearLayout options=new LinearLayout(this);options.setOrientation(LinearLayout.VERTICAL);final Dialog[] sheet=new Dialog[1];
+            sheetOption(options,"不关联任务","按自己的节奏直接开始",taskId<=0,()->{taskId=0;taskTitle="不关联任务";sheet[0].dismiss();renderFocus(false);});
+            int count=0;for(StudyRepository.Task task:list)if(!task.done){count++;sheetOption(options,task.title,"待完成任务",task.id==taskId,()->{taskId=task.id;taskTitle=task.title;sheet[0].dismiss();renderFocus(false);});}
+            if(count==0)options.addView(AppUi.text(this,"暂无可关联的任务，也可以直接专注。",14,AppUi.GRAY,false));
+            sheet[0]=optionSheet("关联任务",options);
+        },e->AppUi.error(this,e));
+    }
+    private void chooseMusic(){
+        LinearLayout options=new LinearLayout(this);options.setOrientation(LinearLayout.VERTICAL);final Dialog[] sheet=new Dialog[1];
+        String current=AppUi.prefs(this).getString("focus_audio","");int count=0;
+        java.lang.reflect.Field[] fields=R.raw.class.getFields();Arrays.sort(fields,(a,b)->a.getName().compareTo(b.getName()));
+        for(java.lang.reflect.Field field:fields){
+            String name=field.getName();if(name.equals("rain")||name.equals("waves")||name.equals("forest"))continue;
+            try{int id=field.getInt(null);android.util.TypedValue value=new android.util.TypedValue();getResources().getValue(id,value,true);
+                if(value.string==null||!value.string.toString().toLowerCase(Locale.ROOT).endsWith(".mp3"))continue;
+                String uri="android.resource://"+getPackageName()+"/raw/"+name;String label=name.replace('_',' ');count++;
+                sheetOption(options,label,"项目音乐",uri.equals(current),()->{AppUi.prefs(this).edit().putString("focus_audio",uri).putString("focus_audio_name",label).apply();selectedSound=4;sheet[0].dismiss();if(session!=null&&session.status==TaskProvider.RUNNING)play(4);renderFocus(session!=null&&session.status==TaskProvider.RUNNING);});
+            }catch(Exception e){android.util.Log.w("FocusMusic","无法读取音乐资源",e);}
+        }
+        if(count==0){options.addView(AppUi.text(this,"暂无项目音乐",17,AppUi.INK,true));options.addView(AppUi.text(this,"添加音乐后，会在这里显示供你选择。",14,AppUi.GRAY,false));AppUi.space(options,16);}
+        sheetOption(options,"从设备选择音频","也可以使用手机里的音乐",false,()->{sheet[0].dismiss();pickAudio();});
+        sheet[0]=optionSheet("选择背景音乐",options);
+        sheet[0].setOnDismissListener(d->{if(soundOptions!=null)soundOptions.setSelection(soundPosition());});
+    }
+    private void chooseDuration(){
+        final Dialog dialog=new Dialog(this);LinearLayout sheet=new LinearLayout(this);sheet.setOrientation(LinearLayout.VERTICAL);sheet.setPadding(AppUi.dp(this,24),AppUi.dp(this,20),AppUi.dp(this,24),AppUi.dp(this,24));
+        android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(AppUi.SURFACE);bg.setCornerRadius(AppUi.dp(this,24));sheet.setBackground(bg);
+        TextView title=AppUi.text(this,"专注时长",21,AppUi.INK,true);title.setGravity(Gravity.CENTER);sheet.addView(title);
+        LinearLayout wheels=new LinearLayout(this);wheels.setGravity(Gravity.CENTER);
+        NumberPicker minutes=new NumberPicker(this),seconds=new NumberPicker(this);minutes.setMinValue(0);minutes.setMaxValue(180);seconds.setMinValue(0);seconds.setMaxValue(59);minutes.setValue(chosenSeconds/60);seconds.setValue(chosenSeconds%60);
+        for(NumberPicker picker:new NumberPicker[]{minutes,seconds}){picker.setWrapSelectorWheel(false);picker.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);if(Build.VERSION.SDK_INT>=29)picker.setTextColor(AppUi.INK);wheels.addView(picker,new LinearLayout.LayoutParams(AppUi.dp(this,90),AppUi.dp(this,170)));wheels.addView(AppUi.text(this,picker==minutes?"分":"秒",16,AppUi.GRAY,false));}
+        sheet.addView(wheels);TextView helper=AppUi.text(this,"上下滑动选择 · 1 秒至 180 分钟",12,AppUi.GRAY,false);helper.setGravity(Gravity.CENTER);sheet.addView(helper);
+        Button save=AppUi.button(this,"保存",false);sheet.addView(save);save.setOnClickListener(v->{int value=minutes.getValue()*60+seconds.getValue();if(value<1||value>10800){AppUi.toast(this,"请选择 1 秒至 180 分钟");return;}chosenSeconds=value;dialog.dismiss();renderFocus(false);});
+        dialog.setContentView(sheet);android.view.Window window=dialog.getWindow();if(window!=null){window.setBackgroundDrawableResource(android.R.color.transparent);window.setGravity(Gravity.BOTTOM);window.setLayout(-1,-2);}dialog.show();if(window!=null)window.setLayout(-1,-2);
+    }
+    private void startFocus(){
+        busy=true;endButton.setEnabled(false);final long selectedTask=taskId;final boolean free=freeMode;final int seconds=chosenSeconds;
+        StudyRepository.run(this,()->{StudyRepository.Session s=StudyRepository.startFocus(getApplicationContext(),selectedTask,seconds,free);FocusCoordinator.schedule(getApplicationContext(),s);return s;},s->{busy=false;session=s;requestedSession=s.id;failedSave=false;resultShown=false;renderSession();if(visible&&s.owned()&&s.status==TaskProvider.RUNNING)play(selectedSound);},e->{busy=false;endButton.setEnabled(true);AppUi.error(this,e);});
+    }
+    private void confirmEnd(){new AlertDialog.Builder(this).setTitle(freeMode?"结束本次正计时？":"提前结束本次专注？").setMessage((freeMode?"保存实际专注时长，并计入自由专注统计。":"保存已专注时间，但不计入完成统计。")+"\n选择结束但不保存，将不保留本次记录，也不计入统计。").setNegativeButton("继续专注",null).setNeutralButton("结束但不保存",(d,w)->discardSession()).setPositiveButton("结束并保存",(d,w)->finishSession(TaskProvider.EARLY_END)).show();}
+    private void discardSession(){
+        if(busy||session==null)return;
+        busy=true;handler.removeCallbacks(tick);long id=session.id;
+        if(endButton!=null){endButton.setEnabled(false);endButton.setText("正在结束…");}
+        StudyRepository.run(this,()->{
+            StudyRepository.discardSession(this,id);
+            try{FocusCoordinator.cancel(this,id);}catch(RuntimeException e){android.util.Log.w("FocusActivity","取消提醒失败",e);}
+            NoiseService.stopMatching(this,id);
+            FocusCoordinator.clearNotice(this);
+            return true;
+        },ignored->{
+            busy=false;session=null;requestedSession=-1;
+            AppUi.toast(this,"本次专注已结束，未保存记录");
+            load();
+        },e->{
+            busy=false;AppUi.error(this,e);
+            if(endButton!=null){endButton.setEnabled(true);endButton.setText("重试结束但不保存");endButton.setOnClickListener(v->discardSession());}
         });
-        homeButton();
-        if (visible) handler.post(tick);
+    }
+    private void renderSession(){
+        handler.removeCallbacks(tick);page.content.removeAllViews();freeMode=session.free;
+        if(session.status!=TaskProvider.RUNNING){renderResult();return;}
+        if(!session.owned()){
+            page.content.addView(AppUi.text(this,"上次专注因进程退出而中断，确认后保留最后保存的时长，不计入正式统计。",17,AppUi.INK,false));endButton=AppUi.button(this,"确认中断并保存",true);page.content.addView(endButton);endButton.setOnClickListener(v->finishSession(TaskProvider.INTERRUPTED));homeButton();return;
+        }
+        renderFocus(true);
+    }
+    private void pickAudio(){try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("audio/*").addCategory(Intent.CATEGORY_OPENABLE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),PICK_AUDIO);}catch(Exception e){AppUi.error(this,e);}}
+    @Override protected void onActivityResult(int request,int result,Intent data){
+        super.onActivityResult(request,result,data);if(request!=PICK_AUDIO)return;
+        if(result==RESULT_OK&&data!=null&&data.getData()!=null){android.net.Uri uri=data.getData();try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);AppUi.prefs(this).edit().putString("focus_audio",uri.toString()).putString("focus_audio_name","设备音频").apply();selectedSound=4;if(session!=null)play(4);}catch(Exception e){AppUi.error(this,e);}}
     }
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!visible || session == null || session.status != TaskProvider.RUNNING || !session.owned()) return;
-            long seconds = (session.remaining() + 999) / 1000;
-            if (countdown != null) countdown.setText(String.format(Locale.US, "%02d:%02d", seconds / 60, seconds % 60));
-            View ring=page.content.findViewWithTag("focus_ring");if(ring!=null)ring.invalidate();
+            long seconds = session.free?Math.max(0,SystemClock.elapsedRealtime()-session.startedElapsed)/1000:(session.remaining() + 999) / 1000;
+            if (countdown != null) countdown.setText(time(seconds));
+            View ring=page.content.findViewWithTag("focus_ring");if(ring instanceof FrameLayout)((FrameLayout)ring).getChildAt(0).invalidate();
             if (soundState != null) soundState.setText(NoiseService.status(session.id));
-            if (seconds == 0) {
+            if (!session.free && seconds == 0) {
                 if (!busy && !failedSave) finishSession(TaskProvider.COMPLETED);
                 return;
             }
@@ -190,7 +257,7 @@ public class FocusActivity extends WheelActivity {
     }
     private void play(int sound) {
         if (session == null || session.status != TaskProvider.RUNNING || !session.owned()) return;
-        try { NoiseService.play(this, session.id, sound); }
+        try { if(sound==4){String uri=AppUi.prefs(this).getString("focus_audio",null);if(uri==null){chooseMusic();return;}NoiseService.play(this,session.id,android.net.Uri.parse(uri));}else NoiseService.play(this, session.id, sound); }
         catch (RuntimeException e) { AppUi.toast(this, "声音未能开启，计时仍会继续。请保持专注页面可见后重试。"); }
     }
     private void updateSoundButtons(LinearLayout row){for(int i=0;i<row.getChildCount();i++){Button b=(Button)row.getChildAt(i);int sound=i==3?0:i+1;b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(selectedSound==sound?AppUi.SOFT:AppUi.SURFACE));}}
@@ -214,13 +281,13 @@ public class FocusActivity extends WheelActivity {
         String state = RecordsActivity.state(session);
         page.content.addView(AppUi.text(this, state, 30, AppUi.GREEN, true));
         page.content.addView(AppUi.text(this, "本次记录已保存：" + AppUi.duration(session.actual), 20, AppUi.INK, true));
-        page.content.addView(AppUi.text(this, session.status == TaskProvider.COMPLETED ? "任务是否已经做完，由你自己决定。" : "本次记录不计入完成统计。", 15, AppUi.GRAY, false));
-        if (session.status == TaskProvider.COMPLETED) {
+        page.content.addView(AppUi.text(this, (session.status == TaskProvider.COMPLETED || session.free && session.status == TaskProvider.EARLY_END) ? "任务是否已经做完，由你自己决定。" : "本次记录不计入完成统计。", 15, AppUi.GRAY, false));
+        if (session.taskId>0 && (session.status == TaskProvider.COMPLETED || session.free && session.status == TaskProvider.EARLY_END)) {
             Button done = AppUi.button(this, "同时将任务标为完成", false); page.content.addView(done);
             done.setOnClickListener(v -> markTaskDone(done));
         }
         Button history = AppUi.button(this, "查看学习记录", true); page.content.addView(history);
-        history.setOnClickListener(v -> { startActivity(new Intent(this, RecordsActivity.class)); finish(); });
+        history.setOnClickListener(v -> { startActivity(new Intent(this, RecordsActivity.class).putExtra("stats_detail","all_focus")); finish(); });
         homeButton();
         if (visible && !resultShown) {
             resultShown = true; FocusCoordinator.clearNotice(this);
@@ -247,8 +314,8 @@ public class FocusActivity extends WheelActivity {
         }
     }
     private void homeButton() {
-        Button back = AppUi.button(this, "返回任务首页", false); page.content.addView(back);
-        back.setOnClickListener(v -> { startActivity(new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)); finish(); });
+        Button back = AppUi.button(this, "返回专注", false); page.content.addView(back);
+        back.setOnClickListener(v -> { requestedSession=-1;session=null;resultShown=false;failedSave=false;getIntent().removeExtra("session_id");load(); });
     }
     private abstract static class Choice implements AdapterView.OnItemSelectedListener {
         public abstract void chosen(int position);
@@ -258,6 +325,11 @@ public class FocusActivity extends WheelActivity {
     private class FocusRingView extends View {
         private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG); private final RectF rect=new RectF();
         FocusRingView(android.content.Context c){super(c);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(AppUi.dp(c,12));setLayerType(View.LAYER_TYPE_SOFTWARE,null);}
-        @Override protected void onDraw(Canvas c){super.onDraw(c);float pad=paint.getStrokeWidth();rect.set(pad,pad,getWidth()-pad,getHeight()-pad);paint.setColor(AppUi.SOFT);c.drawArc(rect,0,360,false,paint);paint.setColor(AppUi.GREEN);float progress=session==null||session.planned<=0?0:Math.max(0,Math.min(1,session.remaining()/(session.planned*1000f)));c.drawArc(rect,-90,360*progress,false,paint);}
+        @Override protected void onDraw(Canvas c){
+            super.onDraw(c);float cx=getWidth()/2f,cy=getHeight()/2f,radius=Math.min(cx,cy)-AppUi.dp(getContext(),12);
+            paint.setColor(AppUi.SOFT);paint.setStrokeWidth(AppUi.dp(getContext(),freeMode?2:9));
+            if(freeMode){for(int i=0;i<120;i++){double angle=Math.PI*2*i/120;float inner=radius-AppUi.dp(getContext(),22);c.drawLine(cx+(float)Math.cos(angle)*inner,cy+(float)Math.sin(angle)*inner,cx+(float)Math.cos(angle)*radius,cy+(float)Math.sin(angle)*radius,paint);}}
+            else {c.drawCircle(cx,cy,radius,paint);if(session!=null&&session.status==TaskProvider.RUNNING){paint.setColor((AppUi.GREEN&0x00ffffff)|0x66000000);rect.set(cx-radius,cy-radius,cx+radius,cy+radius);c.drawArc(rect,-90,360*Math.max(0,Math.min(1,session.remaining()/(session.planned*1000f))),false,paint);}}
+        }
     }
 }

@@ -26,9 +26,11 @@ public final class AppUi {
             GRAY = Color.rgb(101,117,123), BG = Color.rgb(245,247,248), SOFT = Color.rgb(231,242,236);
     public static int SURFACE = Color.WHITE;
     public static boolean dark;
+    private static int durationFormat;
     public static void appearance(Activity a) {
         SharedPreferences p=prefs(a);
         int mode=p.getInt("appearance",0);
+        durationFormat=p.getInt("duration_format",0);
         dark=mode==2 || (mode==0 && (android.content.res.Resources.getSystem().getConfiguration().uiMode & 48)==32);
         int[] accents=dark?new int[]{0xff78d5bb,0xff8dbbff,0xffcfabff,0xffffbe87}:new int[]{0xff257868,0xff2868b2,0xff7950a3,0xffa85d22};
         GREEN=accents[Math.max(0,Math.min(3,p.getInt("accent",0)))];
@@ -101,7 +103,7 @@ public final class AppUi {
     }
     public static LinearLayout card(Context c) {
         LinearLayout v=new LinearLayout(c);v.setOrientation(LinearLayout.VERTICAL);int pad=dp(c,16);v.setPadding(pad,pad,pad,pad);
-        GradientDrawable bg=new GradientDrawable();bg.setColor(SURFACE);bg.setCornerRadius(dp(c,14));bg.setStroke(dp(c,1),Color.rgb(221,229,232));v.setBackground(bg);
+        GradientDrawable bg=new GradientDrawable();bg.setColor(SURFACE);bg.setCornerRadius(dp(c,14));if(!dark)bg.setStroke(dp(c,1),Color.rgb(221,229,232));v.setBackground(bg);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(c,12);v.setLayoutParams(lp);return v;
     }
     public static void space(LinearLayout parent,int height) {
@@ -126,7 +128,7 @@ public final class AppUi {
             return insets;
         });
         LinearLayout heading=new LinearLayout(a);heading.setOrientation(LinearLayout.VERTICAL);heading.setPadding(dp(a,20),dp(a,16),dp(a,20),dp(a,8));
-        heading.addView(text(a,title,25,INK,true));if(subtitle!=null&&!subtitle.isEmpty())heading.addView(text(a,subtitle,14,GRAY,false));p.root.addView(heading);
+        TextView pageTitle=text(a,title,25,INK,true);pageTitle.setGravity(android.view.Gravity.CENTER);heading.addView(pageTitle,new LinearLayout.LayoutParams(-1,-2));if(subtitle!=null&&!subtitle.isEmpty()){TextView caption=text(a,subtitle,14,GRAY,false);caption.setGravity(android.view.Gravity.CENTER);heading.addView(caption,new LinearLayout.LayoutParams(-1,-2));}p.root.addView(heading);
         WheelScrollView scroll=new WheelScrollView(a);scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(true);scroll.setScrollbarFadingEnabled(false);
         scroll.setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET);
@@ -137,7 +139,7 @@ public final class AppUi {
     }
     public static void navigation(Activity a,Page page,int selected) {
         LinearLayout row=new LinearLayout(a);row.setPadding(dp(a,8),dp(a,4),dp(a,8),dp(a,4));row.setBackgroundColor(SURFACE);
-        String[] labels={label(a,"任务","Tasks"),label(a,"日历","Calendar"),label(a,"统计","Stats"),label(a,"设置","Settings")};Class<?>[] classes={MainActivity.class,TodoActivity.class,StatsActivity.class,SettingsActivity.class};
+        String[] labels={label(a,"专注","Focus"),label(a,"日历","Calendar"),label(a,"统计","Stats"),label(a,"设置","Settings")};Class<?>[] classes={MainActivity.class,TodoActivity.class,StatsActivity.class,SettingsActivity.class};
         for(int i=0;i<labels.length;i++){
             final int index=i;
             LinearLayout item=new LinearLayout(a);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(android.view.Gravity.CENTER);item.setPadding(0,dp(a,5),0,dp(a,5));
@@ -155,14 +157,20 @@ public final class AppUi {
         private final int type,color; private final android.graphics.Paint p=new android.graphics.Paint(3);
         NavIcon(Context c,int type,int color){super(c);this.type=type;this.color=color;}
         @Override protected void onDraw(android.graphics.Canvas c){super.onDraw(c);c.save();c.scale(getWidth()/24f,getHeight()/24f);p.setColor(color);p.setStyle(android.graphics.Paint.Style.STROKE);p.setStrokeWidth(1.8f);p.setStrokeCap(android.graphics.Paint.Cap.ROUND);
-            if(type==0){c.drawRoundRect(4,3,21,22,3,3,p);c.drawLine(7,12,10,15,p);c.drawLine(10,15,17,8,p);}
+            if(type==0){c.drawCircle(12,13,9,p);c.drawLine(12,13,12,8,p);c.drawLine(12,13,16,15,p);c.drawLine(9,1,15,1,p);}
             else if(type==1){c.drawRoundRect(3,5,21,22,2,2,p);c.drawLine(3,10,21,10,p);c.drawLine(8,2,8,7,p);c.drawLine(16,2,16,7,p);c.drawPoint(8,14,p);c.drawPoint(13,14,p);c.drawPoint(8,18,p);}
             else if(type==2){c.drawLine(3,22,22,22,p);c.drawRoundRect(5,13,8,20,1,1,p);c.drawRoundRect(11,5,14,20,1,1,p);c.drawRoundRect(17,9,20,20,1,1,p);}
             else {c.drawCircle(12,12,7,p);c.drawCircle(12,12,3,p);for(int i=0;i<8;i++){c.save();c.rotate(i*45,12,12);c.drawLine(12,2,12,5,p);c.restore();}}
             c.restore();
         }
     }
-    public static String duration(int s){return (s/60)+" 分 "+(s%60)+" 秒";}
+    public static String duration(int s){return DurationFormat.format(s,durationFormat);}
+    public static String duration(Context c,long seconds){return DurationFormat.format(seconds,prefs(c).getInt("duration_format",0));}
+    public static int tagColor(Context c,String name){
+        int mode=prefs(c).getInt("tag_color",0);if(mode==1)return GREEN;if(mode==2)return INK;
+        int[] colors=dark?new int[]{0xff78d5bb,0xff8dbbff,0xffcfabff,0xffffbe87}:new int[]{0xff257868,0xff2868b2,0xff7950a3,0xffa85d22};
+        return colors[(name.hashCode()&0x7fffffff)%colors.length];
+    }
     /** 页面根节点先接收滚轮，不依赖鼠标恰好停在滚动容器的空白处。 */
     private static final class WheelPageLayout extends LinearLayout {
         WheelScrollView scroll;
