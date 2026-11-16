@@ -124,7 +124,7 @@ public class NoiseService extends Service {
             player.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
             if (audioUri != null) { player.setDataSource(this, Uri.parse(audioUri)); }
             else player.setDataSource(asset.getFileDescriptor(), asset.getStartOffset(), asset.getLength());
-            player.setLooping(true); player.setVolume(0.55f, 0.55f);
+            player.setLooping(true); float volume=AppUi.prefs(this).getInt("audio_volume",55)/100f; player.setVolume(volume, volume);
             player.setOnPreparedListener(p -> {
                 if (token != generation || player != p) return;
                 if (session == null || session.remaining() == 0) { handler.post(tick); return; }

@@ -11,7 +11,7 @@ import android.view.View;
 import android.widget.*;
 import java.util.*;
 
-public class FocusActivity extends Activity {
+public class FocusActivity extends WheelActivity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private AppUi.Page page;
     private StudyRepository.Session session;
@@ -193,7 +193,7 @@ public class FocusActivity extends Activity {
         try { NoiseService.play(this, session.id, sound); }
         catch (RuntimeException e) { AppUi.toast(this, "声音未能开启，计时仍会继续。请保持专注页面可见后重试。"); }
     }
-    private void updateSoundButtons(LinearLayout row){for(int i=0;i<row.getChildCount();i++){Button b=(Button)row.getChildAt(i);int sound=i==3?0:i+1;b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(selectedSound==sound?AppUi.SOFT:android.graphics.Color.WHITE));}}
+    private void updateSoundButtons(LinearLayout row){for(int i=0;i<row.getChildCount();i++){Button b=(Button)row.getChildAt(i);int sound=i==3?0:i+1;b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(selectedSound==sound?AppUi.SOFT:AppUi.SURFACE));}}
     private void finishSession(int status) {
         if (busy || session == null) return;
         busy = true; failedSave = false; handler.removeCallbacks(tick);
@@ -258,6 +258,6 @@ public class FocusActivity extends Activity {
     private class FocusRingView extends View {
         private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG); private final RectF rect=new RectF();
         FocusRingView(android.content.Context c){super(c);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(AppUi.dp(c,12));setLayerType(View.LAYER_TYPE_SOFTWARE,null);}
-        @Override protected void onDraw(Canvas c){super.onDraw(c);float pad=paint.getStrokeWidth();rect.set(pad,pad,getWidth()-pad,getHeight()-pad);paint.setColor(android.graphics.Color.rgb(224,237,233));c.drawArc(rect,0,360,false,paint);paint.setColor(AppUi.GREEN);float progress=session==null||session.planned<=0?0:Math.max(0,Math.min(1,session.remaining()/(session.planned*1000f)));c.drawArc(rect,-90,360*progress,false,paint);}
+        @Override protected void onDraw(Canvas c){super.onDraw(c);float pad=paint.getStrokeWidth();rect.set(pad,pad,getWidth()-pad,getHeight()-pad);paint.setColor(AppUi.SOFT);c.drawArc(rect,0,360,false,paint);paint.setColor(AppUi.GREEN);float progress=session==null||session.planned<=0?0:Math.max(0,Math.min(1,session.remaining()/(session.planned*1000f)));c.drawArc(rect,-90,360*progress,false,paint);}
     }
 }

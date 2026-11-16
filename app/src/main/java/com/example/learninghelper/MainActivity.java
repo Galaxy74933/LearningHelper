@@ -10,7 +10,7 @@ import android.widget.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-public class MainActivity extends Activity {
+public class MainActivity extends WheelActivity {
     private AppUi.Page page;
     private int filter, loadVersion;
     private boolean busy;
@@ -71,7 +71,7 @@ public class MainActivity extends Activity {
         RadioGroup group = new RadioGroup(this); group.setOrientation(RadioGroup.HORIZONTAL);
         String[] labels = {"待完成", "已完成", "全部"};
         for (int i = 0; i < labels.length; i++) {
-            RadioButton b = new RadioButton(this); b.setId(100 + i); b.setText(labels[i]); group.addView(b);
+            RadioButton b = new RadioButton(this);AppUi.tintControl(b); b.setId(100 + i); b.setText(labels[i]); group.addView(b);
         }
         group.check(100 + filter); page.content.addView(group);
         group.setOnCheckedChangeListener((g, id) -> { filter = id - 100; render(d); });
@@ -114,18 +114,18 @@ public class MainActivity extends Activity {
     private Button taskAction(String label, boolean primary, boolean textOnly) {
         Button button = new Button(this);
         button.setText(label);button.setAllCaps(false);button.setTextSize(textOnly?12:14);
-        button.setTextColor(textOnly?AppUi.GRAY:primary?android.graphics.Color.WHITE:AppUi.INK);
+        button.setTextColor(textOnly?AppUi.GRAY:primary?AppUi.SURFACE:AppUi.INK);
         button.setTypeface(android.graphics.Typeface.DEFAULT,textOnly?android.graphics.Typeface.NORMAL:android.graphics.Typeface.BOLD);
         button.setMinWidth(0);button.setMinimumWidth(0);button.setMinHeight(0);button.setMinimumHeight(0);
         button.setPadding(0,0,0,0);button.setIncludeFontPadding(false);button.setGravity(Gravity.CENTER);
         button.setSingleLine(true);button.setStateListAnimator(null);button.setElevation(0);button.setTranslationZ(0);
         button.setBackgroundTintList(null);
         android.graphics.drawable.GradientDrawable shape=new android.graphics.drawable.GradientDrawable();
-        shape.setColor(textOnly?android.graphics.Color.TRANSPARENT:primary?AppUi.GREEN:android.graphics.Color.WHITE);
+        shape.setColor(textOnly?android.graphics.Color.TRANSPARENT:primary?AppUi.GREEN:AppUi.SURFACE);
         shape.setCornerRadius(AppUi.dp(this,10));
         if(!primary&&!textOnly)shape.setStroke(AppUi.dp(this,1),android.graphics.Color.rgb(221,229,232));
         android.graphics.drawable.GradientDrawable mask=new android.graphics.drawable.GradientDrawable();
-        mask.setColor(android.graphics.Color.WHITE);mask.setCornerRadius(AppUi.dp(this,10));
+        mask.setColor(AppUi.SURFACE);mask.setCornerRadius(AppUi.dp(this,10));
         button.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x22257868),shape,mask));
         return button;
     }
@@ -137,9 +137,9 @@ public class MainActivity extends Activity {
     private void edit(StudyRepository.Task task) {
         LinearLayout form = new LinearLayout(this); form.setOrientation(LinearLayout.VERTICAL);
         int pad = AppUi.dp(this, 20); form.setPadding(pad, pad, pad, pad);
-        EditText title = new EditText(this); title.setHint("任务名称（必填，最多 30 字）"); title.setSingleLine(true);
+        EditText title = new EditText(this);AppUi.tintControl(title); title.setHint("任务名称（必填，最多 30 字）"); title.setSingleLine(true);
         title.setFilters(new InputFilter[]{new InputFilter.LengthFilter(30)});
-        EditText note = new EditText(this); note.setHint("备注（选填，最多 200 字）"); note.setMinLines(2); note.setMaxLines(5);
+        EditText note = new EditText(this);AppUi.tintControl(note); note.setHint("备注（选填，最多 200 字）"); note.setMinLines(2); note.setMaxLines(5);
         note.setFilters(new InputFilter[]{new InputFilter.LengthFilter(200)});
         form.addView(title); form.addView(note);
         if (task != null) { title.setText(task.title); note.setText(task.note); }

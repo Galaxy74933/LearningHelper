@@ -2,7 +2,7 @@ package com.example.learninghelper;
 
 import android.app.*;import android.content.*;import android.net.Uri;import android.os.*;import android.widget.*;import java.util.*;
 
-public class FreeFocusActivity extends Activity {
+public class FreeFocusActivity extends WheelActivity {
     private AppUi.Page page; private StudyRepository.Session session; private TextView timer,status; private Handler h=new Handler(Looper.getMainLooper()); private long started; private boolean busy;
     private final Runnable tick = new Runnable() {
         @Override public void run() {

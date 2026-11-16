@@ -58,12 +58,18 @@ public final class FocusCoordinator {
         return s;
     }
     public static void notice(Context c,StudyRepository.Session s,String title,String body,boolean recover){
-        channels(c);if(!notificationsAllowed(c))return;
+        channels(c);if(!notificationsAllowed(c) || !AppUi.prefs(c).getBoolean("reminders",true))return;
+        boolean audible=AppUi.prefs(c).getBoolean("reminder_sound",true), vibrate=AppUi.prefs(c).getBoolean("reminder_vibrate",false);
+        String channel=REMINDERS+"_"+audible+"_"+vibrate;
+        NotificationChannel configured=new NotificationChannel(channel,"专注提醒 · "+(audible?"有声":"静音")+(vibrate?" · 振动":""),NotificationManager.IMPORTANCE_DEFAULT);
+        if(!audible)configured.setSound(null,null);
+        configured.enableVibration(vibrate);
+        c.getSystemService(NotificationManager.class).createNotificationChannel(configured);
         Intent i=new Intent(c,recover?FocusActivity.class:RecordsActivity.class)
                 .setData(Uri.parse("learninghelper://result/"+s.id)).putExtra("session_id",s.id)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pi=PendingIntent.getActivity(c,0,i,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        Notification n=new Notification.Builder(c,REMINDERS).setSmallIcon(R.drawable.ic_focus_notification)
+        Notification n=new Notification.Builder(c,channel).setSmallIcon(R.drawable.ic_focus_notification)
                 .setContentTitle(title).setContentText(body).setStyle(new Notification.BigTextStyle().bigText(body))
                 .setContentIntent(pi).setAutoCancel(true).build();
         try { c.getSystemService(NotificationManager.class).notify(RESULT_NOTICE,n); }
