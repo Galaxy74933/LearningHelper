@@ -11,7 +11,14 @@ import java.util.*;
 /** 概览只展示指标与趋势；点击卡片进入任务或专注明细。 */
 public class RecordsActivity extends WheelActivity {
     private AppUi.Page page;
+    private LinearLayout fixedControls;
     private int version;
+    private int periodMode=StatsPeriod.DAY;
+    private long periodAnchor=System.currentTimeMillis();
+    private StatisticsData cached;
+    @Override protected void onCreate(android.os.Bundle state){super.onCreate(state);if(state!=null){periodMode=state.getInt("periodMode",0);periodAnchor=state.getLong("periodAnchor",System.currentTimeMillis());}}
+    @Override protected void onSaveInstanceState(android.os.Bundle out){super.onSaveInstanceState(out);out.putInt("periodMode",periodMode);out.putLong("periodAnchor",periodAnchor);}
+
     private boolean deleting;
     private AlertDialog deleteDialog;
     private static final String DETAIL="stats_detail";
@@ -19,6 +26,7 @@ public class RecordsActivity extends WheelActivity {
     @Override protected void onNewIntent(Intent i){super.onNewIntent(i);setIntent(i);refresh();}
     @Override protected void onDestroy(){if(deleteDialog!=null)deleteDialog.dismiss();super.onDestroy();}
     private String title(String detail){
+        if(getIntent().hasExtra("period_mode")&&detail!=null)return AppUi.label(this,detail.endsWith("tasks")?"完成任务":"专注记录",detail.endsWith("tasks")?"Completed tasks":"Focus records");
         if("today_tasks".equals(detail))return L10n.t(RecordsActivity.this,"今日完成任务");
         if("all_tasks".equals(detail))return L10n.t(RecordsActivity.this,"累计完成任务");
         if("today_focus".equals(detail))return L10n.t(RecordsActivity.this,"今日专注记录");
@@ -27,46 +35,39 @@ public class RecordsActivity extends WheelActivity {
     }
     private void refresh(){
         int request=++version;String detail=getIntent().getStringExtra(DETAIL);
-        page=AppUi.page(this,title(detail),detail==null?L10n.t(RecordsActivity.this,"看见每一天的进步"):"");
+        page=AppUi.page(this,title(detail),"");
+        fixedControls=new LinearLayout(this);fixedControls.setOrientation(LinearLayout.VERTICAL);
+        fixedControls.setPadding(AppUi.dp(this,20),0,AppUi.dp(this,20),0);
+        page.root.addView(fixedControls,1,new LinearLayout.LayoutParams(-1,-2));
         if(detail==null)AppUi.navigation(this,page,2);
-        else {TextView back=AppUi.text(this,L10n.t(RecordsActivity.this,"‹ 返回统计"),16,AppUi.GREEN,true);back.setPadding(0,AppUi.dp(this,10),0,AppUi.dp(this,10));page.content.addView(back);back.setOnClickListener(v->finish());}
-        StudyRepository.run(this,()->StatisticsData.load(this),data->{if(request==version){if(detail==null)dashboard(data);else details(data,detail);}},e->{if(request==version)AppUi.error(this,e);});
+        else {TextView back=AppUi.text(this,L10n.t(RecordsActivity.this,"‹ 返回统计"),16,AppUi.GREEN,true);back.setPadding(0,AppUi.dp(this,10),0,AppUi.dp(this,10));fixedControls.addView(back);back.setFocusable(true);back.setOnClickListener(v->finish());}
+        StudyRepository.run(this,()->StatisticsData.load(this),data->{if(request==version){if(detail==null){cached=data;dashboard(data);}else {
+            if(getIntent().hasExtra("period_mode")){
+                StatsPeriod p=new StatsPeriod(getIntent().getIntExtra("period_mode",0),getIntent().getLongExtra("period_anchor",System.currentTimeMillis()));
+                page.content.addView(AppUi.text(this,StatsDashboard.label(this,p),14,AppUi.GRAY,true));data=data.filtered(p);
+            }
+            details(data,detail);
+        }}},e->{if(request==version)AppUi.error(this,e);});
     }
-    private void open(String key){startActivity(new Intent(this,RecordsActivity.class).putExtra(DETAIL,key));}
     private LinearLayout section(String name){
         LinearLayout card=AppUi.card(this);GradientDrawable bg=new GradientDrawable();bg.setColor(AppUi.SURFACE);bg.setCornerRadius(AppUi.dp(this,18));card.setBackground(bg);
         card.addView(AppUi.text(this,name,20,AppUi.INK,true));page.content.addView(card);return card;
     }
     private void dashboard(StatisticsData d){
-        LinearLayout overview=section(L10n.t(RecordsActivity.this,"今日概览"));AppUi.space(overview,4);overview.addView(AppUi.text(this,d.today+L10n.t(RecordsActivity.this," · 点击数据块查看详情"),12,AppUi.GRAY,false));
-        LinearLayout first=new LinearLayout(this),second=new LinearLayout(this);overview.addView(first);overview.addView(second);
-        tile(first,L10n.t(RecordsActivity.this,"今日完成数"),String.valueOf(d.todayTasks),L10n.t(RecordsActivity.this,"个 · 按完成日期"),"today_tasks",0);
-        tile(first,L10n.t(RecordsActivity.this,"累计完成数"),String.valueOf(d.completed.size()),L10n.t(RecordsActivity.this,"个 · 当前已完成任务"),"all_tasks",1);
-        tile(second,L10n.t(RecordsActivity.this,"今日专注次数"),String.valueOf(d.todayCount),L10n.t(RecordsActivity.this,"次 · 已完成或保存"),"today_focus",0);
-        tile(second,L10n.t(RecordsActivity.this,"累计专注"),compact(d.free+d.timed),L10n.t(RecordsActivity.this,"自由 + 定时"),"all_focus",1);
-        chart(L10n.t(RecordsActivity.this,"任务统计"),L10n.t(RecordsActivity.this,"近七日 · 每日完成数"),d.taskTrend,d.days,false,"all_tasks");
-        chart(L10n.t(RecordsActivity.this,"专注统计"),L10n.t(RecordsActivity.this,"近七日 · 每日专注时长"),d.focusTrend,d.days,true,"all_focus");
+        page.content.removeAllViews();
+        fixedControls.removeAllViews();
+        new StatsDashboard(this,page.content,d,new StatsPeriod(periodMode,periodAnchor),new StatsDashboard.Actions(){
+            public void range(int mode,long anchor){periodMode=mode;periodAnchor=anchor;dashboard(cached);page.scroll.scrollTo(0,0);}
+            public void details(String key){startActivity(new Intent(RecordsActivity.this,RecordsActivity.class).putExtra(DETAIL,key).putExtra("period_mode",periodMode).putExtra("period_anchor",periodAnchor));}
+        }).render();
+        // Keep the period tabs and date navigation outside the scrolling content.
+        for(int i=0;i<2;i++){android.view.View control=page.content.getChildAt(0);page.content.removeView(control);fixedControls.addView(control);}
     }
-    private void tile(LinearLayout row,String name,String value,String hint,String key,int position){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);int pad=AppUi.dp(this,12);box.setPadding(pad,pad,pad,pad);
-        GradientDrawable bg=new GradientDrawable();bg.setColor(AppUi.SOFT);bg.setCornerRadius(AppUi.dp(this,14));box.setBackground(bg);
-        box.addView(AppUi.text(this,name,14,AppUi.INK,true));AppUi.space(box,12);
-        TextView number=AppUi.text(this,value,26,AppUi.GREEN,true);number.setMaxLines(1);number.setAutoSizeTextTypeUniformWithConfiguration(14,26,1,android.util.TypedValue.COMPLEX_UNIT_SP);
-        box.addView(number,new LinearLayout.LayoutParams(-1,AppUi.dp(this,38)));AppUi.space(box,5);box.addView(AppUi.text(this,hint,11,AppUi.GRAY,false));
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.topMargin=AppUi.dp(this,12);if(position==0)lp.rightMargin=AppUi.dp(this,6);else lp.leftMargin=AppUi.dp(this,6);row.addView(box,lp);
-        box.setFocusable(true);box.setContentDescription(name+"："+value+"，"+hint+L10n.t(RecordsActivity.this,"，查看详情"));box.setOnClickListener(v->open(key));
-    }
-    private void chart(String title,String subtitle,long[] values,String[] dates,boolean focus,String key){
-        LinearLayout card=section(title+"  ›");card.setOnClickListener(v->open(key));card.setFocusable(true);
-        AppUi.space(card,6);card.addView(AppUi.text(this,subtitle,12,AppUi.GRAY,false));
-        card.addView(new StatisticsChart(this,values,dates,focus),new LinearLayout.LayoutParams(-1,AppUi.dp(this,210)));
-    }
-    private String compact(long seconds){return AppUi.duration(this,seconds);}
     private String duration(long s){return AppUi.duration(this,s);}
     private void details(StatisticsData d,String key){
         boolean today=key.startsWith("today"),tasks=key.endsWith("tasks");
         if(tasks){
-            LinearLayout summary=section(AppUi.label(this,today?"今日完成":"累计完成",today?"Completed today":"Total completed"));
+            LinearLayout summary=section(AppUi.label(this,today?"今日完成":getIntent().hasExtra("period_mode")?"本周期完成":"累计完成",today?"Completed today":getIntent().hasExtra("period_mode")?"Completed in period":"Total completed"));
             summary.addView(AppUi.text(this,String.valueOf(today?d.todayTasks:d.completed.size()),36,AppUi.GREEN,true));
             summary.addView(AppUi.text(this,AppUi.label(this,"已完成任务","Completed tasks"),14,AppUi.GRAY,false));
             AppUi.space(page.content,16);page.content.addView(AppUi.text(this,AppUi.label(this,"任务记录","Task records"),20,AppUi.INK,true));
@@ -84,7 +85,7 @@ public class RecordsActivity extends WheelActivity {
             if(shown==0){AppUi.space(page.content,24);page.content.addView(AppUi.text(this,L10n.t(RecordsActivity.this,"暂无完成任务，完成后会显示在这里。"),15,AppUi.GRAY,false));}
         }else{
             long free=today?d.todayFree:d.free,timed=today?d.todayTimed:d.timed;
-            LinearLayout summary=section((today?L10n.t(RecordsActivity.this,"今日"):L10n.t(RecordsActivity.this,"累计"))+L10n.t(RecordsActivity.this,"专注 · ")+(today?d.todayCount:d.totalCount)+L10n.t(RecordsActivity.this," 次"));
+            LinearLayout summary=section((today?L10n.t(RecordsActivity.this,"今日"):getIntent().hasExtra("period_mode")?AppUi.label(this,"本周期","Selected period"):L10n.t(RecordsActivity.this,"累计"))+L10n.t(RecordsActivity.this,"专注 · ")+(today?d.todayCount:d.totalCount)+L10n.t(RecordsActivity.this," 次"));
             summary.addView(AppUi.text(this,duration(free+timed),24,AppUi.GREEN,true));summary.addView(AppUi.text(this,L10n.t(RecordsActivity.this,"自由：")+duration(free)+L10n.t(RecordsActivity.this,"\n定时：")+duration(timed),14,AppUi.GRAY,false));
             AppUi.space(page.content,16);page.content.addView(AppUi.text(this,L10n.t(RecordsActivity.this,"学习记录"),20,AppUi.INK,true));
             String last="";int shown=0;

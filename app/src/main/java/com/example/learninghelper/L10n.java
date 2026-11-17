@@ -298,6 +298,8 @@ public final class L10n {
     }
     public static Locale locale(Context c) {return english(c)?Locale.ENGLISH:Locale.SIMPLIFIED_CHINESE;}
     public static String t(Context c,String key) {String value=EN.get(key);return english(c)&&value!=null?value:key;}
+    public static String itemCount(Context c,int count) {return count+(english(c)?(count==1?" item":" items"):"项");}
+    public static String todoCount(Context c,int count) {return count+(english(c)?(count==1?" to-do":" to-dos"):"项待办");}
     public static String sessionTitle(Context c,StudyRepository.Session s) {return s.taskId>0||!s.todoId.isEmpty()?s.title:t(c,s.free?"自由专注":"倒计时专注");}
     public static String month(Context c,java.util.Calendar month) {return new java.text.SimpleDateFormat(english(c)?"MMMM yyyy":"yyyy年 M月",locale(c)).format(month.getTime());}
     public static String category(Context c,String name) {

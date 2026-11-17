@@ -58,6 +58,10 @@ public final class AppUi {
             android.widget.Switch control=(android.widget.Switch)view;
             control.setThumbTintList(controlColors(GREEN,dark?0xffb0bec5:0xffeeeeee));
             control.setTrackTintList(controlColors(blend(SURFACE,GREEN,.42f),blend(SURFACE,GRAY,.35f)));
+        }else if(view instanceof android.widget.CheckBox){
+            android.widget.CheckBox control=(android.widget.CheckBox)view;
+            control.setButtonTintList(null);
+            control.setButtonDrawable(new RoundCheckDrawable(view.getContext()));
         }else if(view instanceof android.widget.CompoundButton){
             ((android.widget.CompoundButton)view).setButtonTintList(controlColors(GREEN,GRAY));
         }else if(view instanceof android.widget.SeekBar){

@@ -40,12 +40,12 @@ public class TodoActivity extends WheelActivity {
     private PopupWindow rangePopup;
     private TextView rangeButton;
     private final ArrayList<JSONObject> visibleItems=new ArrayList<>();
-    private TextView pageTitle;
-    private Dialog navigationDialog;
+    private LinearLayout viewTabs;
+    private HorizontalScrollView viewTabsScroll;
     private int draftPriority=3;
     private String draftCategory="未分类";
 
-    @Override protected void onDestroy(){if(rangePopup!=null)rangePopup.dismiss();if(navigationDialog!=null)navigationDialog.dismiss();if(calendarAnimator!=null){calendarAnimator.removeAllListeners();calendarAnimator.cancel();}if(doors!=null)page.scroll.getOverlay().remove(doors);if(doorImage!=null)doorImage.recycle();super.onDestroy();}
+    @Override protected void onDestroy(){if(rangePopup!=null)rangePopup.dismiss();if(calendarAnimator!=null){calendarAnimator.removeAllListeners();calendarAnimator.cancel();}if(doors!=null)page.scroll.getOverlay().remove(doors);if(doorImage!=null)doorImage.recycle();super.onDestroy();}
 
     private ScrollView agendaScroll;
     private final ArrayList<ScrollView> quadrantScrolls=new ArrayList<>();
@@ -70,18 +70,40 @@ public class TodoActivity extends WheelActivity {
         try{JSONArray data=new JSONArray(getSharedPreferences("learning_todos",0).getString("items","[]"));for(int i=0;i<data.length();i++)items.add(data.getJSONObject(i));}
         catch(Exception e){readable=false;AppUi.error(this,e);}
         page=AppUi.page(this,AppUi.label(this,"待办","To-do"),"");AppUi.navigation(this,page,1);
-        LinearLayout heading=(LinearLayout)page.root.getChildAt(0);pageTitle=(TextView)heading.getChildAt(0);pageTitle.setTextSize(L10n.english(this)?20:25);
-        page.root.removeView(heading);FrameLayout titleBar=new FrameLayout(this);titleBar.addView(heading,new FrameLayout.LayoutParams(-1,-2));
-        heading.setPadding(AppUi.dp(this,58),AppUi.dp(this,16),AppUi.dp(this,58),AppUi.dp(this,8));
-        TextView menu=control("☰",()->showNavigation());menu.setTextSize(24);menu.setContentDescription(L10n.t(TodoActivity.this,"切换待办视图"));FrameLayout.LayoutParams menuParams=new FrameLayout.LayoutParams(AppUi.dp(this,48),AppUi.dp(this,48),Gravity.START|Gravity.CENTER_VERTICAL);menuParams.leftMargin=AppUi.dp(this,8);titleBar.addView(menu,menuParams);rangeButton=control("",()->showTimeRanges());rangeButton.setTextSize(L10n.english(this)?12:14);
-        FrameLayout.LayoutParams rangeParams=new FrameLayout.LayoutParams(AppUi.dp(this,96),AppUi.dp(this,48),Gravity.END|Gravity.CENTER_VERTICAL);rangeParams.rightMargin=AppUi.dp(this,8);titleBar.addView(rangeButton,rangeParams);
-        heading.setPadding(AppUi.dp(this,104),AppUi.dp(this,16),AppUi.dp(this,104),AppUi.dp(this,8));page.root.addView(titleBar,0);
+        page.root.removeViewAt(0);
+        LinearLayout titleBar=new LinearLayout(this);titleBar.setGravity(Gravity.CENTER_VERTICAL);
+        titleBar.setPadding(AppUi.dp(this,12),AppUi.dp(this,8),AppUi.dp(this,8),AppUi.dp(this,4));
+        viewTabsScroll=new HorizontalScrollView(this);viewTabsScroll.setHorizontalScrollBarEnabled(false);
+        viewTabs=new LinearLayout(this);viewTabs.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);viewTabsScroll.addView(viewTabs);
+        titleBar.addView(viewTabsScroll,new LinearLayout.LayoutParams(0,AppUi.dp(this,52),1));
+        rangeButton=control("",()->showTimeRanges());rangeButton.setTextSize(12);
+        titleBar.addView(rangeButton,new LinearLayout.LayoutParams(AppUi.dp(this,80),AppUi.dp(this,48)));
+        page.root.addView(titleBar,0);
         toolbar=new LinearLayout(this);toolbar.setPadding(AppUi.dp(this,16),0,AppUi.dp(this,16),0);page.root.addView(toolbar,1);
         body=page.content;render(false);
     }
     @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putInt("view_type",viewType);out.putInt("mode",mode);out.putLong("day",selected.getTimeInMillis());}
     private void reloadItems(){items.clear();items.addAll(StudyRepository.todos(this));cachedMonthViews.clear();}
     private void saveItem(JSONObject item,boolean create){StudyRepository.saveTodo(this,item,create);reloadItems();}
+    private void updateCompletion(JSONObject item,boolean done){
+        int scrollY=page.scroll.getScrollY();
+        int agendaY=agendaScroll==null?0:agendaScroll.getScrollY();
+        int[] quadrantY=new int[quadrantScrolls.size()];
+        for(int i=0;i<quadrantY.length;i++)quadrantY[i]=quadrantScrolls.get(i).getScrollY();
+        try{
+            // Copy first so a failed save cannot change the displayed source data.
+            JSONObject updated=new JSONObject(item.toString());
+            updated.put("done",done);updated.put("completed_at",done?System.currentTimeMillis():0L);
+            saveItem(updated,false);
+        }catch(Exception e){AppUi.error(this,e);reloadItems();}
+        render(false);
+        page.scroll.post(()->{
+            if(isFinishing()||isDestroyed())return;
+            page.scroll.scrollTo(0,scrollY);
+            if(viewType==0&&mode==2&&agendaScroll!=null)agendaScroll.scrollTo(0,agendaY);
+            for(int i=0;i<Math.min(quadrantY.length,quadrantScrolls.size());i++)quadrantScrolls.get(i).scrollTo(0,quadrantY[i]);
+        });
+    }
     private TextView control(String text,Runnable action){TextView v=AppUi.text(this,text,16,AppUi.GREEN,true);v.setGravity(Gravity.CENTER);v.setMinHeight(AppUi.dp(this,48));v.setFocusable(true);v.setOnClickListener(w->{if(!animating)action.run();});return v;}
     private void tools(){toolbar.removeAllViews();toolbar.setVisibility(viewType==2||viewType==3?View.GONE:View.VISIBLE);if(viewType==2||viewType==3)return;
         if(viewType!=0){TextView label=AppUi.text(this,"",14,AppUi.GRAY,false);toolbar.addView(label,new LinearLayout.LayoutParams(0,-2,1));TextView add=control("＋",()->newItem(3,"未分类"));add.setTextSize(26);add.setContentDescription(L10n.t(TodoActivity.this,"添加待办事项"));toolbar.addView(add,new LinearLayout.LayoutParams(AppUi.dp(this,48),-2));return;}
@@ -97,7 +119,7 @@ public class TodoActivity extends WheelActivity {
         todayKey=CalendarDates.key(System.currentTimeMillis());dayCounts.clear();for(JSONObject item:items){String date=item.optString("date");dayCounts.put(date,count(date)+1);}
         rangeButton.setVisibility(viewType==0?View.GONE:View.VISIBLE);rangeButton.setText(L10n.t(this,TodoDateRange.LABELS[timeRange])+" ▾");rangeButton.setContentDescription(L10n.t(TodoActivity.this,"时间范围：")+L10n.t(this,TodoDateRange.LABELS[timeRange]));
         visibleItems.clear();Calendar today=CalendarDates.day(System.currentTimeMillis());for(JSONObject item:items)if(TodoDateRange.matches(item.optString("date"),timeRange,today))visibleItems.add(item);
-        pageTitle.setText(viewType==0?AppUi.label(this,"待办","To-do"):L10n.t(this,viewNames[viewType]));tools();body.removeAllViews();page.scroll.scrollTo(0,0);
+        updateViewTabs();tools();body.removeAllViews();page.scroll.scrollTo(0,0);
         if(!readable){body.addView(AppUi.text(this,L10n.t(TodoActivity.this,"待办读取失败，原数据已保留。请重新打开重试。"),16,AppUi.GRAY,false));return;}
         if(viewType==1&&visibleItems.isEmpty())body.addView(AppUi.text(this,L10n.t(TodoActivity.this,"这个时间范围内暂无待办"),15,AppUi.GRAY,false));
         if(viewType==1)taskList();else if(viewType==2)quadrants();else if(viewType==3)categoryView();else if(mode==0)year();else if(mode==1)months();else agenda();
@@ -137,8 +159,8 @@ public class TodoActivity extends WheelActivity {
             LinearLayout cell=new LinearLayout(this);cell.setOrientation(LinearLayout.VERTICAL);cell.setGravity(Gravity.TOP|Gravity.CENTER_HORIZONTAL);cell.setPadding(0,AppUi.dp(this,8),0,0);
             TextView number=AppUi.text(this,String.valueOf(date.get(Calendar.DATE)),19,today? (AppUi.dark?AppUi.BG:Color.WHITE):active?AppUi.GREEN:date.get(Calendar.MONTH)==month?AppUi.INK:AppUi.GRAY,today||active);
             number.setGravity(Gravity.CENTER);android.graphics.drawable.GradientDrawable shape=new android.graphics.drawable.GradientDrawable();shape.setShape(android.graphics.drawable.GradientDrawable.OVAL);shape.setColor(today?AppUi.GREEN:Color.TRANSPARENT);if(active&&!today)shape.setStroke(AppUi.dp(this,2),AppUi.GREEN);number.setBackground(shape);cell.addView(number,new LinearLayout.LayoutParams(AppUi.dp(this,34),AppUi.dp(this,34)));
-            if(!compact&&count(key)>0){TextView dot=AppUi.text(this,count(key)+L10n.t(TodoActivity.this,"项"),11,AppUi.GREEN,false);dot.setGravity(Gravity.CENTER);cell.addView(dot);}
-            cell.setContentDescription(key+"，"+count(key)+L10n.t(TodoActivity.this,"项待办"));cell.setFocusable(true);cell.setOnClickListener(v->{if(animating)return;if(mode==2&&key.equals(CalendarDates.key(selected))){expandMonth();}else if(mode==1){collapse(date,row);}else{selected=date;render(true);}});
+            if(!compact&&count(key)>0){TextView dot=AppUi.text(this,L10n.itemCount(this,count(key)),11,AppUi.GREEN,false);dot.setGravity(Gravity.CENTER);cell.addView(dot);}
+            cell.setContentDescription(key+"，"+L10n.todoCount(this,count(key)));cell.setFocusable(true);cell.setOnClickListener(v->{if(animating)return;if(mode==2&&key.equals(CalendarDates.key(selected))){expandMonth();}else if(mode==1){collapse(date,row);}else{selected=date;render(true);}});
             row.addView(cell,new LinearLayout.LayoutParams(0,AppUi.dp(this,compact?52:84),1));
         }return row;
     }
@@ -248,7 +270,7 @@ public class TodoActivity extends WheelActivity {
         CheckBox done=new CheckBox(this);AppUi.tintControl(done);done.setText(item.optString("title"));done.setTextColor(AppUi.INK);done.setChecked(item.optBoolean("done"));LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);LinearLayout titleRow=new LinearLayout(this);titleRow.setGravity(Gravity.CENTER_VERTICAL);titleRow.addView(done,new LinearLayout.LayoutParams(0,-2,1));info.addView(titleRow);
         String category=item.optString("category","未分类");int importance=Math.max(0,Math.min(3,item.optInt("priority",3)));
         TextView categoryTag=AppUi.text(this,L10n.category(this,category),12,AppUi.tagColor(this,category),false);categoryTag.setMaxLines(1);categoryTag.setEllipsize(android.text.TextUtils.TruncateAt.END);categoryTag.setMaxWidth(AppUi.dp(this,90));titleRow.addView(categoryTag);TextView level=priorityLabel(importance,12);info.addView(level);info.addView(AppUi.text(this,L10n.t(TodoActivity.this,"截止：")+(item.optString("date").isEmpty()?L10n.t(TodoActivity.this,"未安排"):item.optString("date")),12,AppUi.GRAY,false));row.addView(info,new LinearLayout.LayoutParams(0,-2,1));
-        done.setOnCheckedChangeListener((v,on)->{try{item.put("done",on);item.put("completed_at",on?System.currentTimeMillis():0L);saveItem(item,false);}catch(Exception e){AppUi.error(this,e);}});
+        done.setOnCheckedChangeListener((v,on)->{updateCompletion(item,on);});
         TextView more=control("···",()->new AlertDialog.Builder(this).setItems(new String[]{L10n.t(TodoActivity.this,"编辑 / 调整日期"),L10n.t(TodoActivity.this,"删除")},(d,w)->{if(w==0)edit(item);else new AlertDialog.Builder(this).setTitle(L10n.t(TodoActivity.this,"删除这条待办？")).setMessage(item.optString("title")).setNegativeButton(L10n.t(TodoActivity.this,"取消"),null).setPositiveButton(L10n.t(TodoActivity.this,"删除"),(x,y)->{StudyRepository.deleteTodo(this,item.optString("id"));reloadItems();render(false);}).show();}).show());row.addView(more,new LinearLayout.LayoutParams(AppUi.dp(this,48),-2));list.addView(row);
     }
     private void edit(JSONObject existing){
@@ -306,14 +328,24 @@ public class TodoActivity extends WheelActivity {
         }
         rangePopup.setHeight(Math.min(AppUi.dp(this,492),getResources().getDisplayMetrics().heightPixels/2));rangePopup.showAsDropDown(rangeButton,0,0,Gravity.END);
     }
-    private void showNavigation(){
-        if(animating)return;
-        navigationDialog=new Dialog(this);LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setBackgroundColor(AppUi.SURFACE);panel.setPadding(AppUi.dp(this,20),AppUi.dp(this,32),AppUi.dp(this,20),AppUi.dp(this,24));
-        panel.addView(AppUi.text(this,L10n.t(TodoActivity.this,"待办视图"),24,AppUi.INK,true));AppUi.space(panel,24);
-        String[] icons={"▦","☷","⊞","▤"};
-        for(int i=0;i<viewNames.length;i++){final int target=i;TextView option=AppUi.text(this,icons[i]+"   "+L10n.t(this,viewNames[i]),18,i==viewType?AppUi.GREEN:AppUi.INK,true);option.setGravity(Gravity.CENTER_VERTICAL);option.setPadding(AppUi.dp(this,14),0,AppUi.dp(this,10),0);option.setMinHeight(AppUi.dp(this,62));option.setContentDescription(L10n.t(this,viewNames[i]));option.setFocusable(true);if(i==viewType){android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(AppUi.SOFT);bg.setCornerRadius(AppUi.dp(this,12));option.setBackground(bg);}panel.addView(option,new LinearLayout.LayoutParams(-1,-2));option.setOnClickListener(v->{viewType=target;getSharedPreferences("learning_todos",0).edit().putInt("view_type",target).apply();navigationDialog.dismiss();render(false);});AppUi.space(panel,8);}
-        navigationDialog.setContentView(panel);
-        Window w=navigationDialog.getWindow();if(w!=null){w.setBackgroundDrawableResource(android.R.color.transparent);w.setGravity(Gravity.START|Gravity.TOP);}navigationDialog.show();if(w!=null)w.setLayout(Math.min(AppUi.dp(this,300),getResources().getDisplayMetrics().widthPixels*4/5),-1);panel.setTranslationX(-AppUi.dp(this,300));panel.animate().translationX(0).setDuration(250).start();
+    private void updateViewTabs(){
+        viewTabs.removeAllViews();
+        String[] labels=L10n.english(this)?new String[]{"Calendar","List","Quadrants","Categories"}:new String[]{"日历","清单","四象限","分类"};
+        for(int i=0;i<labels.length;i++){
+            final int target=i;boolean active=i==viewType;
+            LinearLayout tab=new LinearLayout(this);tab.setOrientation(LinearLayout.VERTICAL);tab.setGravity(Gravity.CENTER);
+            tab.setPadding(AppUi.dp(this,10),0,AppUi.dp(this,10),0);
+            TextView label=AppUi.text(this,labels[i],16,active?AppUi.GREEN:AppUi.GRAY,active);label.setGravity(Gravity.CENTER);
+            tab.addView(label,new LinearLayout.LayoutParams(-2,AppUi.dp(this,44)));
+            View underline=new View(this);android.graphics.drawable.GradientDrawable line=new android.graphics.drawable.GradientDrawable();
+            line.setColor(active?AppUi.GREEN:Color.TRANSPARENT);line.setCornerRadius(AppUi.dp(this,2));underline.setBackground(line);
+            tab.addView(underline,new LinearLayout.LayoutParams(AppUi.dp(this,22),AppUi.dp(this,3)));
+            tab.setFocusable(true);tab.setSelected(active);tab.setContentDescription(L10n.t(this,viewNames[i]));
+            tab.setBackgroundResource(android.R.drawable.list_selector_background);
+            tab.setOnClickListener(v->{if(animating||viewType==target)return;viewType=target;getSharedPreferences("learning_todos",0).edit().putInt("view_type",target).apply();render(false);});
+            viewTabs.addView(tab,new LinearLayout.LayoutParams(-2,AppUi.dp(this,52)));
+            if(active)tab.post(()->{if(target==viewType)viewTabsScroll.smoothScrollTo(Math.max(0,tab.getRight()-viewTabsScroll.getWidth()),0);});
+        }
     }
     private void newItem(int priority,String category){draftPriority=priority;draftCategory=category;edit(null);}
     private int priority(JSONObject item){return Math.max(0,Math.min(3,item.optInt("priority",3)));}
@@ -343,8 +375,8 @@ public class TodoActivity extends WheelActivity {
                 TextView add=control("＋",()->newItem(level,"未分类"));add.setTextColor(priorityColor(level));add.setTextSize(22);add.setContentDescription(AppUi.label(this,"添加","Add ")+L10n.t(this,priorities[level]));header.addView(add,new LinearLayout.LayoutParams(AppUi.dp(this,36),AppUi.dp(this,48)));card.addView(header);
                 ScrollView scroll=new ScrollView(this);quadrantScrolls.add(scroll);scroll.setOnGenericMotionListener((v,e)->{if(e.getAction()==MotionEvent.ACTION_SCROLL){scroll.scrollBy(0,Math.round(-e.getAxisValue(MotionEvent.AXIS_VSCROLL)*AppUi.dp(this,56)));return true;}return false;});LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);scroll.addView(list);card.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
                 for(JSONObject item:visibleItems)if(priority(item)==level){LinearLayout taskRow=new LinearLayout(this);taskRow.setGravity(Gravity.CENTER_VERTICAL);
-                    CheckBox check=new CheckBox(this);AppUi.tintControl(check);check.setText(item.optString("title"));check.setTextSize(14);check.setChecked(item.optBoolean("done"));taskRow.addView(check,new LinearLayout.LayoutParams(0,-2,1));check.setOnCheckedChangeListener((v,on)->{try{item.put("done",on);item.put("completed_at",on?System.currentTimeMillis():0L);saveItem(item,false);}catch(Exception e){AppUi.error(this,e);}});
-                    TextView edit=control(L10n.t(this,"编辑"),()->edit(item));edit.setTextSize(11);taskRow.addView(edit,new LinearLayout.LayoutParams(AppUi.dp(this,38),AppUi.dp(this,48)));list.addView(taskRow);}
+                    CheckBox check=new CheckBox(this);AppUi.tintControl(check);check.setText(item.optString("title"));check.setTextSize(14);check.setMinHeight(AppUi.dp(this,38));check.setMinimumHeight(AppUi.dp(this,38));check.setPadding(check.getPaddingLeft(),0,check.getPaddingRight(),0);check.setChecked(item.optBoolean("done"));taskRow.addView(check,new LinearLayout.LayoutParams(0,-2,1));check.setOnCheckedChangeListener((v,on)->{updateCompletion(item,on);});
+                    TextView edit=control(L10n.t(this,"编辑"),()->edit(item));edit.setTextSize(11);edit.setMinHeight(AppUi.dp(this,38));taskRow.addView(edit,new LinearLayout.LayoutParams(AppUi.dp(this,38),AppUi.dp(this,38)));list.addView(taskRow);}
                 LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.setMargins(column==0?0:AppUi.dp(this,4),AppUi.dp(this,4),column==0?AppUi.dp(this,4):0,AppUi.dp(this,4));line.addView(card,lp);
             }grid.addView(line,new LinearLayout.LayoutParams(-1,0,1));}body.addView(grid,new LinearLayout.LayoutParams(-1,-2));
         grid.post(()->{if(grid.getParent()!=null)grid.requestLayout();});
