@@ -169,10 +169,21 @@ public class TodoActivity extends WheelActivity {
         if(page.scroll.getWidth()==0||page.scroll.getHeight()==0)return;
         cachedMonthViews.clear();for(int i=0;i<body.getChildCount();i++)cachedMonthViews.add(body.getChildAt(i));
         monthAnchor=(Calendar)selected.clone();monthScroll=page.scroll.getScrollY();
-        if(doorImage!=null)doorImage.recycle();
-        doorImage=Bitmap.createBitmap(page.scroll.getWidth(),page.scroll.getHeight(),Bitmap.Config.ARGB_8888);
-        page.scroll.draw(new Canvas(doorImage));doorImage.prepareToDraw();
-        doorSplit=Math.max(1,Math.min(doorImage.getHeight()-1,row.getBottom()-monthScroll));
+        if(doorImage!=null){doorImage.recycle();doorImage=null;}
+        int width=page.scroll.getWidth(),height=page.scroll.getHeight();
+        // Freeze pixels before detaching the month views. RenderNode child display lists
+        // are discarded on detach, so keeping references to them makes the doors blank.
+        doorImage=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);
+        Canvas snapshot=new Canvas(doorImage);snapshot.drawColor(AppUi.BG);
+        snapshot.clipRect(0,0,width,height);
+        for(View child:cachedMonthViews){
+            int y=body.getTop()+child.getTop()-monthScroll;
+            if(y+child.getHeight()<=0||y>=height)continue;
+            snapshot.save();snapshot.translate(body.getLeft()+child.getLeft(),y);
+            child.draw(snapshot);snapshot.restore();
+        }
+        doorImage.prepareToDraw();
+        doorSplit=Math.max(1,Math.min(height-1,row.getBottom()-monthScroll));
         selected=date;animating=true;mode=2;render(false);
         // 待办先放在门后，覆盖层一直不透明，直到上下月历移动后露出内容。
         doors=new DoorDrawable();page.scroll.getOverlay().add(doors);
@@ -206,8 +217,11 @@ public class TodoActivity extends WheelActivity {
             if(doorImage==null)return;
             int top=agendaPanel.getTop()-page.scroll.getScrollY(),bottom=agendaPanel.getBottom()-page.scroll.getScrollY();
             float up=Math.max(0,doorSplit-top)*progress,down=Math.max(0,bottom-doorSplit)*progress;
-            c.save();c.clipRect(0,0,getBounds().width(),doorSplit-up);c.drawBitmap(doorImage,0,-up,null);c.restore();
-            c.save();c.clipRect(0,doorSplit+down,getBounds().width(),getBounds().height());c.drawBitmap(doorImage,0,down,null);c.restore();
+            c.save();c.clipRect(0,0,getBounds().width(),doorSplit-up);c.translate(0,-up);drawSnapshot(c);c.restore();
+            c.save();c.clipRect(0,doorSplit+down,getBounds().width(),getBounds().height());c.translate(0,down);drawSnapshot(c);c.restore();
+        }
+        private void drawSnapshot(Canvas canvas){
+            if(doorImage!=null)canvas.drawBitmap(doorImage,0,0,null);
         }
         @Override public void setAlpha(int alpha){} @Override public void setColorFilter(ColorFilter filter){}
         @Override public int getOpacity(){return PixelFormat.TRANSLUCENT;}
