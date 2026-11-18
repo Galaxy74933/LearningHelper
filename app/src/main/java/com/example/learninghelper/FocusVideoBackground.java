@@ -23,7 +23,7 @@ final class FocusVideoBackground implements TextureView.SurfaceTextureListener {
         layers.setBackground(fallback);
         texture=new TextureView(a);texture.setOpaque(false);texture.setAlpha(0);texture.setSurfaceTextureListener(this);
         layers.addView(texture,new FrameLayout.LayoutParams(-1,-1));
-        veil=new View(a);veil.setVisibility(View.GONE);veil.setBackgroundColor((AppUi.BG&0xffffff)|((AppUi.dark?175:185)<<24));
+        veil=new View(a);veil.setVisibility(View.GONE);veil.setBackgroundColor((AppUi.BG&0xffffff)|((AppUi.dark?145:125)<<24));
         layers.addView(veil,new FrameLayout.LayoutParams(-1,-1));
         page.root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         layers.addView(page.root,new FrameLayout.LayoutParams(-1,-1));

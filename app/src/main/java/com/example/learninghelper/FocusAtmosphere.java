@@ -35,7 +35,7 @@ final class FocusAtmosphere extends Drawable {
         c.drawColor(AppUi.BG);float blend=Math.min(1,(SystemClock.uptimeMillis()-changed)/1000f);
         drawPhoto(c,previous,1-blend);drawPhoto(c,image,blend);
         if(blend>=1)previous=null;
-        paint.setColor(AppUi.BG);paint.setAlpha(AppUi.dark?175:185);c.drawRect(getBounds(),paint);paint.setAlpha(255);
+        paint.setColor(AppUi.BG);paint.setAlpha(AppUi.dark?145:125);c.drawRect(getBounds(),paint);paint.setAlpha(255);
     }
     private void drawPhoto(Canvas c,Bitmap b,float alpha){
         if(b==null||alpha<=0)return;Rect r=getBounds();float t=SystemClock.uptimeMillis()/1000f;

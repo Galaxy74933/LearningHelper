@@ -222,17 +222,27 @@ public class FocusActivity extends WheelActivity {
     private void chooseMusic(){
         LinearLayout options=new LinearLayout(this);options.setOrientation(LinearLayout.VERTICAL);final Dialog[] sheet=new Dialog[1];
         String current=AppUi.prefs(this).getString("focus_audio","");int count=0;
+        sheetOption(options,AppUi.label(this,"＋ 导入本地音乐","＋ Import local music"),AppUi.label(this,"从设备中选择音频文件","Choose an audio file on this device"),false,()->{sheet[0].dismiss();pickAudio();});
+        try{
+            org.json.JSONObject imported=new org.json.JSONObject(AppUi.prefs(this).getString("imported_music","{}"));
+            Iterator<String> keys=imported.keys();
+            while(keys.hasNext()){
+                String uri=keys.next(),label=imported.getString(uri);
+                sheetOption(options,label,AppUi.label(this,"本地音乐","Local music"),uri.equals(current),()->{AppUi.prefs(this).edit().putString("focus_audio",uri).putString("focus_audio_name",label).apply();selectedSound=4;sheet[0].dismiss();if(session!=null&&session.status==TaskProvider.RUNNING)play(4);renderFocus(session!=null&&session.status==TaskProvider.RUNNING);});
+                count++;
+            }
+        }catch(org.json.JSONException e){android.util.Log.w("FocusMusic","Cannot read imported music",e);}
+
         java.lang.reflect.Field[] fields=R.raw.class.getFields();Arrays.sort(fields,(a,b)->a.getName().compareTo(b.getName()));
         for(java.lang.reflect.Field field:fields){
             String name=field.getName();if(name.equals("rain")||name.equals("waves")||name.equals("forest"))continue;
             try{int id=field.getInt(null);android.util.TypedValue value=new android.util.TypedValue();getResources().getValue(id,value,true);
                 if(value.string==null||!value.string.toString().toLowerCase(Locale.ROOT).endsWith(".mp3"))continue;
-                String uri="android.resource://"+getPackageName()+"/raw/"+name;String label=name.replace('_',' ');count++;
+                String uri="android.resource://"+getPackageName()+"/raw/"+name;String label=name.equals("music_mei_guan_xi")?"没关系 - 容祖儿":name.equals("music_for_us")?"For Us - V":name.equals("music_custom_02")?AppUi.label(this,"自定义音乐 2","Custom music 2"):name.replace('_',' ');count++;
                 sheetOption(options,label,L10n.t(FocusActivity.this,"项目音乐"),uri.equals(current),()->{AppUi.prefs(this).edit().putString("focus_audio",uri).putString("focus_audio_name",label).apply();selectedSound=4;sheet[0].dismiss();if(session!=null&&session.status==TaskProvider.RUNNING)play(4);renderFocus(session!=null&&session.status==TaskProvider.RUNNING);});
             }catch(Exception e){android.util.Log.w("FocusMusic","无法读取音乐资源",e);}
         }
         if(count==0){options.addView(AppUi.text(this,L10n.t(FocusActivity.this,"暂无项目音乐"),17,AppUi.INK,true));options.addView(AppUi.text(this,L10n.t(FocusActivity.this,"添加音乐后，会在这里显示供你选择。"),14,AppUi.GRAY,false));AppUi.space(options,16);}
-        sheetOption(options,L10n.t(FocusActivity.this,"从设备选择音频"),L10n.t(FocusActivity.this,"也可以使用手机里的音乐"),false,()->{sheet[0].dismiss();pickAudio();});
         sheet[0]=optionSheet(L10n.t(FocusActivity.this,"选择背景音乐"),options);
         sheet[0].setOnDismissListener(d->{if(soundOptions!=null)soundOptions.setSelection(soundPosition());});
     }
@@ -307,7 +317,10 @@ public class FocusActivity extends WheelActivity {
         super.onActivityResult(request,result,data);
         if(request==PICK_BACKGROUND){if(result==RESULT_OK&&data!=null&&data.getData()!=null){android.net.Uri uri=data.getData();StudyRepository.run(this,()->FocusAtmosphere.importPhoto(getApplicationContext(),uri),path->updateAtmosphere(),e->AppUi.error(this,e));}return;}
         if(request!=PICK_AUDIO)return;
-        if(result==RESULT_OK&&data!=null&&data.getData()!=null){android.net.Uri uri=data.getData();try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);AppUi.prefs(this).edit().putString("focus_audio",uri.toString()).putString("focus_audio_name","设备音频").apply();selectedSound=4;if(session!=null)play(4);}catch(Exception e){AppUi.error(this,e);}}
+        if(result==RESULT_OK&&data!=null&&data.getData()!=null){android.net.Uri uri=data.getData();try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);String label=AppUi.label(this,"本地音乐","Local music");
+            try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst()&&!cursor.isNull(0))label=cursor.getString(0);}
+            org.json.JSONObject imported=new org.json.JSONObject(AppUi.prefs(this).getString("imported_music","{}"));imported.put(uri.toString(),label);
+            AppUi.prefs(this).edit().putString("imported_music",imported.toString()).putString("focus_audio",uri.toString()).putString("focus_audio_name",label).apply();selectedSound=4;if(session!=null&&session.status==TaskProvider.RUNNING)play(4);renderFocus(session!=null&&session.status==TaskProvider.RUNNING);}catch(Exception e){AppUi.error(this,e);}}
     }
     private final Runnable tick = new Runnable() {
         @Override public void run() {
