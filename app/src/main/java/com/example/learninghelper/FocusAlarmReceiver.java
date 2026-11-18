@@ -16,7 +16,7 @@ public class FocusAlarmReceiver extends BroadcastReceiver {
                 if(s==null||s.status!=TaskProvider.RUNNING)return;
                 if(!s.owned()){
                     FocusCoordinator.notice(app,s,L10n.t(app,"上次专注需要确认"),L10n.t(app,"应用曾退出，请打开应用确认中断记录。"),true);
-                }else if(s.remaining()>0){FocusCoordinator.schedule(app,s);}
+                }else if(s.paused()){return;}else if(s.remaining()>0){FocusCoordinator.schedule(app,s);}
                 else FocusCoordinator.finish(app,id,TaskProvider.COMPLETED,true);
             }catch(Exception e){Log.e("FocusAlarmReceiver","处理到期事件失败",e);}
             finally{pending.finish();}

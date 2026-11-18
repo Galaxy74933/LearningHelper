@@ -81,10 +81,18 @@ final class StatsGraphic extends View {
             ids.sort((i,j)->Double.compare(Math.sin(Math.toRadians(angles[i])),Math.sin(Math.toRadians(angles[j]))));
             float gap=dp(47),first=cy-(ids.size()-1)*gap/2;
             for(int n=0;n<ids.size();n++){
-                int i=ids.get(n);double angle=Math.toRadians(angles[i]);float x=cx+(float)Math.cos(angle)*(r+dp(15)),y=cy+(float)Math.sin(angle)*(r+dp(15));
+                int i=ids.get(n);double angle=Math.toRadians(angles[i]);float grow=emphasis==null?0:emphasis[i];
+                float anchor=r+dp(10.5f)+dp(10)*grow;
+                float x=cx+(float)Math.cos(angle)*anchor,y=cy+(float)Math.sin(angle)*anchor;
                 float ty=first+n*gap,edge=right?w*.81f:w*.19f,tx=right?w-dp(2):dp(2);
-                p.setColor(color(i));p.setStrokeWidth(dp(1));c.drawLine(x,y,edge,ty-dp(6),p);
+                p.setColor(color(i));p.setStrokeWidth(dp(1));
+                // First leave the segment radially, then route outside the ring.
+                float outer=anchor+dp(6),ox=cx+(float)Math.cos(angle)*outer,oy=cy+(float)Math.sin(angle)*outer;
+                float lane=cx+(right?1:-1)*(r+dp(24));
+                c.drawLine(x,y,ox,oy,p);c.drawLine(ox,oy,lane,oy,p);
+                c.drawLine(lane,oy,edge,ty-dp(6),p);
                 c.drawLine(edge,ty-dp(6),right?w-dp(6):dp(6),ty-dp(6),p);
+                c.drawCircle(x,y,dp(1.5f),p);
                 Paint.Align align=right?Paint.Align.RIGHT:Paint.Align.LEFT;float labelWidth=w*.21f;
                 fitted(c,labels[i],tx,ty-dp(13),labelWidth,11,AppUi.INK,align);
                 fitted(c,String.format(L10n.locale(getContext()),"%.1f%%",sum==0?0:100.0*values[i]/sum),tx,ty+dp(8),labelWidth,11,AppUi.GRAY,align);

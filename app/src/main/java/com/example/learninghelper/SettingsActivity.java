@@ -12,6 +12,7 @@ import android.widget.*;
 public class SettingsActivity extends WheelActivity {
     private AppUi.Page page;
     private int savedScroll;
+    private boolean switchingAccount;
     private String websiteDraft;
     private PopupWindow preferencePopup;
     @Override public void onCreate(android.os.Bundle state){
@@ -144,15 +145,47 @@ public class SettingsActivity extends WheelActivity {
         aboutTitle.setTypeface(null,android.graphics.Typeface.BOLD);
         page.scroll.post(()->page.scroll.scrollTo(0,savedScroll));
     }
+    private void switchData(String target){
+        if(switchingAccount||target.equals(DataProfiles.account(this)))return;
+        AppUi.dialog(this).setTitle(t("切换本地账号","Switch local account"))
+            .setMessage(t("当前资料、任务和专注记录会保留。切换后显示所选账号的内容，主题和语言共用。","Your profile, tasks and focus records will be kept. The selected account has its own content; theme and language are shared."))
+            .setNegativeButton(t("取消","Cancel"),null)
+            .setPositiveButton(t("切换","Switch"),(d,w)->{
+                if(switchingAccount)return;switchingAccount=true;
+                StudyRepository.run(this,()->getContentResolver().call(TaskProvider.CONTENT_URI,"switch_profile",target,null),result->{
+                    switchingAccount=false;
+                    // Discard screens holding IDs from the previous account.
+                    startActivity(new Intent(this,SettingsActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+                    AppUi.toast(this,t("账号已切换","Account switched"));
+                },error->{switchingAccount=false;AppUi.error(this,error);});
+            }).show();
+    }
+    private String accountLabel(String id){return id.equals("demo")?t("演示账号","Demo account"):t("个人账号","Personal account");}
+    private void accounts(){
+        LinearLayout list=section("本地账号","Local accounts");
+        for(String id:new String[]{"personal","demo"}){
+            boolean current=id.equals(DataProfiles.account(this));
+            LinearLayout card=AppUi.card(this);card.setOrientation(LinearLayout.HORIZONTAL);card.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams icon=new LinearLayout.LayoutParams(AppUi.dp(this,48),AppUi.dp(this,48));icon.rightMargin=AppUi.dp(this,14);card.addView(avatar(48,id),icon);
+            LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);
+            info.addView(AppUi.text(this,nickname(id),18,AppUi.INK,true));
+            info.addView(AppUi.text(this,accountLabel(id)+t(" · 本地保存"," · On this device"),13,AppUi.GRAY,false));card.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+            card.addView(AppUi.text(this,current?t("✓ 当前","✓ Active"):t("切换","Switch"),14,AppUi.GREEN,current));
+            card.setFocusable(true);card.setContentDescription(accountLabel(id)+(current?t("，当前账号",", active"):""));card.setOnClickListener(v->switchData(id));list.addView(card);
+        }
+        LinearLayout edit=section("当前账号","Current account");row(edit,t("编辑个人信息","Edit profile"),nickname(),()->openDetail("profile"));
+        note(page.content,"两个账号独立保存资料、任务和专注记录。首次安装时个人账号为空，演示账号提供示例数据；无需密码，不提供云同步。","Both accounts keep separate profiles, tasks and focus records. A fresh install starts with an empty personal account and sample data in the demo account. No password or cloud sync.");
+    }
     private void renderDetail(String detail){
-        String title=detail.equals("about")?t("关于","About"):detail.equals("agreement")?t("用户协议","User agreement"):detail.equals("privacy")?t("隐私政策","Privacy policy"):detail.equals("profile")?t("个人信息","Personal information"):detail.equals("language")?t("应用语言","App language"):detail.equals("website")?t("项目网址","Project website"):detail.equals("reset")?t("恢复默认设置","Reset preferences"):t("使用说明","Usage notes");
+        String title=detail.equals("accounts")?t("切换账号","Switch account"):detail.equals("about")?t("关于","About"):detail.equals("agreement")?t("用户协议","User agreement"):detail.equals("privacy")?t("隐私政策","Privacy policy"):detail.equals("profile")?t("个人信息","Personal information"):detail.equals("language")?t("应用语言","App language"):detail.equals("website")?t("项目网址","Project website"):detail.equals("reset")?t("恢复默认设置","Reset preferences"):t("使用说明","Usage notes");
         page=AppUi.page(this,title,"");
         // 使用同一 Activity 的独立实例，系统返回手势与顶部返回入口都回到设置首页。
         LinearLayout backBar=new LinearLayout(this);backBar.setPadding(AppUi.dp(this,20),0,AppUi.dp(this,20),0);
         TextView back=AppUi.text(this,t("‹  返回","‹  Back"),16,AppUi.GREEN,false);
         back.setGravity(android.view.Gravity.CENTER_VERTICAL);back.setMinHeight(AppUi.dp(this,48));back.setFocusable(true);back.setOnClickListener(v->finish());
         backBar.addView(back,new LinearLayout.LayoutParams(-1,-2));page.root.addView(backBar,0);
-        if(detail.equals("about")){
+        if(detail.equals("accounts")){accounts();
+        }else if(detail.equals("about")){
             TextView version=AppUi.text(this,versionLabel(),18,AppUi.GRAY,false);version.setGravity(android.view.Gravity.CENTER);version.setPadding(0,AppUi.dp(this,28),0,AppUi.dp(this,28));page.content.addView(version);
             LinearLayout links=AppUi.card(this);page.content.addView(links);
             row(links,t("用户协议","User agreement"),null,()->openDetail("agreement"));
@@ -195,25 +228,27 @@ public class SettingsActivity extends WheelActivity {
         }
     }
     private static final int PICK_AVATAR=302;
-    private android.content.SharedPreferences profile(){return getSharedPreferences("personal_profile",MODE_PRIVATE);}
-    private String nickname(){String name=profile().getString("nickname","");return name.isEmpty()?t("学习者","Learner"):name;}
-    private java.io.File avatarFile(){return new java.io.File(getFilesDir(),"profile-avatar.png");}
-    private android.view.View avatar(int size){
+    private android.content.SharedPreferences profile(){return DataProfiles.profile(this,DataProfiles.account(this));}
+    private String nickname(){return nickname(DataProfiles.account(this));}
+    private String nickname(String id){String name=DataProfiles.profile(this,id).getString("nickname","");return name.isEmpty()?accountLabel(id):name;}
+    private java.io.File avatarFile(){return DataProfiles.avatar(this,DataProfiles.account(this));}
+    private android.view.View avatar(int size){return avatar(size,DataProfiles.account(this));}
+    private android.view.View avatar(int size,String id){
         FrameLayout frame=new FrameLayout(this);
         android.graphics.drawable.GradientDrawable circle=new android.graphics.drawable.GradientDrawable();circle.setShape(android.graphics.drawable.GradientDrawable.OVAL);circle.setColor(AppUi.SOFT);
         frame.setBackground(circle);frame.setClipToOutline(true);
-        TextView fallback=AppUi.text(this,nickname().substring(0,nickname().offsetByCodePoints(0,1)),size/3,AppUi.GREEN,true);fallback.setGravity(android.view.Gravity.CENTER);frame.addView(fallback,new FrameLayout.LayoutParams(-1,-1));
+        TextView fallback=AppUi.text(this,nickname(id).substring(0,nickname(id).offsetByCodePoints(0,1)),size/3,AppUi.GREEN,true);fallback.setGravity(android.view.Gravity.CENTER);frame.addView(fallback,new FrameLayout.LayoutParams(-1,-1));
         ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);frame.addView(image,new FrameLayout.LayoutParams(-1,-1));
-        StudyRepository.run(this,()->android.graphics.BitmapFactory.decodeFile(avatarFile().getPath()),bitmap->{if(bitmap!=null)image.setImageBitmap(bitmap);},e->{});
+        StudyRepository.run(this,()->android.graphics.BitmapFactory.decodeFile(DataProfiles.avatar(this,id).getPath()),bitmap->{if(bitmap!=null)image.setImageBitmap(bitmap);},e->{});
         frame.setContentDescription(t("个人头像","Profile picture"));return frame;
     }
     private void profileHeader(){
         LinearLayout header=AppUi.card(this);header.setOrientation(LinearLayout.HORIZONTAL);header.setGravity(android.view.Gravity.CENTER_VERTICAL);
         LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);
         TextView name=AppUi.text(this,nickname(),23,AppUi.INK,true);name.setMaxLines(1);name.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(name);
-        AppUi.space(info,6);info.addView(AppUi.text(this,t("查看和编辑个人信息","View and edit profile"),13,AppUi.GRAY,false));header.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+        AppUi.space(info,6);info.addView(AppUi.text(this,accountLabel(DataProfiles.account(this))+t(" · 本地保存 · 切换账号"," · Local · Switch account"),13,AppUi.GRAY,false));header.addView(info,new LinearLayout.LayoutParams(0,-2,1));
         LinearLayout.LayoutParams photo=new LinearLayout.LayoutParams(AppUi.dp(this,60),AppUi.dp(this,60));photo.leftMargin=AppUi.dp(this,12);header.addView(avatar(60),photo);
-        header.setFocusable(true);header.setContentDescription(t("编辑个人信息","Edit profile"));header.setOnClickListener(v->openDetail("profile"));page.content.addView(header);
+        header.setFocusable(true);header.setContentDescription(t("切换账号和编辑资料","Switch account and edit profile"));header.setOnClickListener(v->openDetail("accounts"));page.content.addView(header);
     }
     private void profileDetails(){
         LinearLayout photo=new LinearLayout(this);photo.setOrientation(LinearLayout.VERTICAL);photo.setGravity(android.view.Gravity.CENTER);photo.setPadding(0,AppUi.dp(this,18),0,AppUi.dp(this,20));
@@ -247,6 +282,7 @@ public class SettingsActivity extends WheelActivity {
         super.onActivityResult(request,result,data);
         if(request!=PICK_AVATAR||result!=RESULT_OK||data==null||data.getData()==null)return;
         android.net.Uri uri=data.getData();
+        final java.io.File destination=avatarFile();
         StudyRepository.run(this,()->{
             android.graphics.Bitmap bitmap;
             if(Build.VERSION.SDK_INT>=28){
@@ -260,7 +296,7 @@ public class SettingsActivity extends WheelActivity {
                 try(java.io.InputStream in=getContentResolver().openInputStream(uri)){bitmap=android.graphics.BitmapFactory.decodeStream(in,null,options);}
             }
             if(bitmap==null)throw new IllegalArgumentException(t("图片无法读取，请重新选择","Could not read the image. Please choose another."));
-            android.util.AtomicFile file=new android.util.AtomicFile(avatarFile());java.io.FileOutputStream stream=null;
+            android.util.AtomicFile file=new android.util.AtomicFile(destination);java.io.FileOutputStream stream=null;
             try{stream=file.startWrite();if(!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,stream))throw new java.io.IOException(t("头像保存失败","Could not save the profile picture"));file.finishWrite(stream);}
             catch(Exception e){if(stream!=null)file.failWrite(stream);throw e;}finally{bitmap.recycle();}
             return true;

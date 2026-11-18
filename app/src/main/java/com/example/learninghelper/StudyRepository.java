@@ -36,13 +36,23 @@ public final class StudyRepository {
     }
     public static class Task { public long id, completedAt; public String title, note; public boolean done; }
     public static class Session {
-        public long id, taskId, startedAt, startedElapsed, endedAt;
+        public long id, taskId, startedAt, startedElapsed, endedAt, pausedAt;
         public String title, owner, endedDay, memo;
-        public String todoId="";
+        public String todoId="",todoDate="";
         public int planned, actual, status;
         public boolean demo, free;
         public boolean owned() { return TaskProvider.PROCESS_TOKEN.equals(owner); }
-        public long remaining() { return TimerMath.remainingMillis(startedElapsed, planned, SystemClock.elapsedRealtime()); }
+        public boolean paused(){return pausedAt>0;}
+        public long elapsedMillis(){return Math.max(0,(paused()?pausedAt:SystemClock.elapsedRealtime())-startedElapsed);}
+        public long remaining() { return Math.max(0,planned*1000L-elapsedMillis()); }
+    }
+    public static Session pause(Context c,long id,boolean paused){
+        ContentValues values=new ContentValues();values.put("paused",paused);
+        c.getContentResolver().update(sessionUri(id),values,null,null);
+        Session result=session(c,id);
+        if(result==null||result.status!=TaskProvider.RUNNING)throw new IllegalStateException("Session ended");
+        if(result.paused()){FocusCoordinator.cancel(c,id);NoiseService.stopMatching(c,id);}else FocusCoordinator.schedule(c,result);
+        return result;
     }
     public static Uri taskUri(long id) { return ContentUris.withAppendedId(TaskProvider.CONTENT_URI, id); }
     public static Uri sessionUri(long id) { return ContentUris.withAppendedId(TaskProvider.SESSIONS_URI, id); }
@@ -113,12 +123,15 @@ public final class StudyRepository {
     }
     public static org.json.JSONObject todo(Context c,String id) {for(org.json.JSONObject item:todos(c))if(id.equals(item.optString("id")))return item;return null;}
     public static Session startTodoFocus(Context c,String id,int seconds,boolean free) {
-        ContentValues v=new ContentValues();v.put("task_id",0);v.put("todo_id",id);v.put("planned_seconds",seconds);v.put("free_focus",free?1:0);
+        return startTodoFocus(c,id,"",seconds,free);
+    }
+    public static Session startTodoFocus(Context c,String id,String date,int seconds,boolean free) {
+        ContentValues v=new ContentValues();v.put("todo_date",date);v.put("task_id",0);v.put("todo_id",id);v.put("planned_seconds",seconds);v.put("free_focus",free?1:0);
         Uri uri=c.getContentResolver().insert(TaskProvider.SESSIONS_URI,v);if(uri==null)throw new IllegalStateException(L10n.t(c,"专注未启动"));return session(c,ContentUris.parseId(uri));
     }
     public static synchronized boolean completeTodo(Context c,String id) {
         List<org.json.JSONObject> list=todos(c);boolean found=false;
-        try{for(org.json.JSONObject item:list)if(id.equals(item.optString("id"))){found=true;if(!item.optBoolean("done")){item.put("done",true);item.put("completed_at",System.currentTimeMillis());}break;}}
+        try{for(org.json.JSONObject item:list)if(id.equals(item.optString("id"))){found=true;if(!item.optBoolean("done")){String day=CalendarDates.key(System.currentTimeMillis());if(TodoSchedule.daily(item)&&!TodoSchedule.on(item,day))return false;TodoSchedule.complete(item,day,true);}break;}}
         catch(org.json.JSONException e){throw new IllegalStateException(e);}
         if(found){org.json.JSONArray array=new org.json.JSONArray();for(org.json.JSONObject item:list)array.put(item);c.getSharedPreferences("learning_todos",0).edit().putString("items",array.toString()).apply();}return found;
     }
@@ -130,6 +143,9 @@ public final class StudyRepository {
         for(org.json.JSONObject item:list){if(id.equals(item.optString("id"))){array.put(value);found=true;}else array.put(item);}
         if(!found){if(!create)throw new IllegalStateException(AppUi.label(c,"任务不存在，请刷新页面","Task no longer exists. Please refresh."));array.put(value);}
         c.getSharedPreferences("learning_todos",0).edit().putString("items",array.toString()).apply();
+    }
+    public static synchronized boolean clearTodoOccurrence(Context c,String id,String day) throws org.json.JSONException {
+        for(org.json.JSONObject item:todos(c))if(id.equals(item.optString("id"))){TodoSchedule.complete(item,day,false);saveTodo(c,item,false);return true;}return false;
     }
     public static synchronized boolean deleteTodo(Context c,String id) {
         org.json.JSONArray array=new org.json.JSONArray();boolean found=false;
@@ -159,7 +175,7 @@ public final class StudyRepository {
     }
     private static Session read(Cursor r) {
         Session s = new Session(); s.id = number(r, "_id"); s.taskId = number(r, "task_id");
-        s.todoId=string(r,"todo_id");
+        s.todoDate=string(r,"todo_date");s.todoId=string(r,"todo_id");s.pausedAt=number(r,"paused_at");
         s.title = string(r, "title_snapshot"); s.owner = string(r, "owner_token");
         s.memo = string(r, "memo");
         s.endedDay = string(r, "ended_day"); s.startedAt = number(r, "started_at");

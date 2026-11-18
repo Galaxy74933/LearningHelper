@@ -94,7 +94,7 @@ public class NoiseService extends Service {
                 StudyRepository.Session s = StudyRepository.session(getApplicationContext(), id);
                 handler.post(() -> {
                     if (token != generation) return;
-                    if (s == null || s.status != TaskProvider.RUNNING || !s.owned() || s.remaining() == 0) { stopSelf(); return; }
+                    if (s == null || s.status != TaskProvider.RUNNING || !s.owned() || s.paused() || s.remaining() == 0) { stopSelf(); return; }
                     session = s; prepare(sound, token, audioUri);
                 });
             } catch (Exception e) {
@@ -156,6 +156,7 @@ public class NoiseService extends Service {
         @Override public void run() {
             if (session == null) return;
             StudyRepository.Session current = session;
+            if (current.paused()) { stopSelf(); return; }
             if (current.remaining() == 0) {
                 releasePlayer();
                 StudyRepository.IO.execute(() -> {

@@ -93,6 +93,7 @@ public class RecordsActivity extends WheelActivity {
                 if(!day.equals(last)){AppUi.space(page.content,14);page.content.addView(AppUi.text(this,(day.equals(d.today)?L10n.t(RecordsActivity.this,"今天 · "):"")+day,16,AppUi.GRAY,true));last=day;}
                 LinearLayout card=AppUi.card(this);card.addView(AppUi.text(this,L10n.sessionTitle(this,s),17,AppUi.INK,true));
                 SimpleDateFormat f=new SimpleDateFormat("MM-dd HH:mm",Locale.CHINA);card.addView(AppUi.text(this,f.format(new Date(s.startedAt))+" → "+f.format(new Date(s.endedAt)),12,AppUi.GRAY,false));
+                if(!s.todoDate.isEmpty())card.addView(AppUi.text(this,AppUi.label(this,"关联日期：","Task date: ")+s.todoDate,12,AppUi.GRAY,false));
                 card.addView(AppUi.text(this,(s.free?L10n.t(RecordsActivity.this,"自由专注"):L10n.t(RecordsActivity.this,"定时专注"))+" · "+duration(s.actual)+" · "+L10n.t(this,state(s))+(StatisticsData.counted(s)?"":L10n.t(RecordsActivity.this,"（不计入统计）")),13,AppUi.GRAY,false));
                 LinearLayout footer=new LinearLayout(this);footer.setGravity(Gravity.END);Button del=AppUi.button(this,L10n.t(RecordsActivity.this,"删除"),false);footer.addView(del,new LinearLayout.LayoutParams(AppUi.dp(this,84),AppUi.dp(this,48)));card.addView(footer);del.setOnClickListener(v->confirmDelete(s));page.content.addView(card);shown++;
             }
@@ -103,11 +104,11 @@ public class RecordsActivity extends WheelActivity {
     private void confirmDeleteTask(StatisticsData.CompletedTask task){
         if(deleting||(deleteDialog!=null&&deleteDialog.isShowing()))return;
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle(AppUi.label(this,"删除这条任务？","Delete this task?"))
-            .setMessage(task.title+"\n\n"+AppUi.label(this,"将同步从任务列表和完成统计中删除，已有专注记录保留。","This removes the task from your list and completion statistics. Focus records are kept."))
+            .setMessage(task.title+"\n\n"+(!task.occurrenceDay.isEmpty()?AppUi.label(this,"仅清除这一天的完成记录，任务和专注记录保留。","Only this date’s completion is cleared. The task and focus records are kept."):AppUi.label(this,"将同步从任务列表和完成统计中删除，已有专注记录保留。","This removes the task from your list and completion statistics. Focus records are kept.")))
             .setNegativeButton(L10n.t(this,"取消"),null).setPositiveButton(L10n.t(this,"删除"),null).create();deleteDialog=dialog;
         dialog.setOnShowListener(x->dialog.getButton(-1).setOnClickListener(v->{
             if(deleting)return;deleting=true;dialog.setCancelable(false);dialog.getButton(-1).setEnabled(false);dialog.getButton(-2).setEnabled(false);
-            StudyRepository.run(this,()->task.taskId>0?getContentResolver().delete(StudyRepository.taskUri(task.taskId),null,null)>0:StudyRepository.deleteTodo(this,task.todoId),removed->{
+            StudyRepository.run(this,()->task.taskId>0?getContentResolver().delete(StudyRepository.taskUri(task.taskId),null,null)>0:!task.occurrenceDay.isEmpty()?StudyRepository.clearTodoOccurrence(this,task.todoId,task.occurrenceDay):StudyRepository.deleteTodo(this,task.todoId),removed->{
                 deleting=false;dialog.dismiss();refresh();
             },e->{deleting=false;dialog.setCancelable(true);dialog.getButton(-1).setEnabled(true);dialog.getButton(-2).setEnabled(true);AppUi.error(this,e);});
         }));dialog.show();
@@ -117,7 +118,7 @@ public class RecordsActivity extends WheelActivity {
         String time = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA).format(new Date(session.startedAt));
         String message = L10n.t(RecordsActivity.this,"任务：") + L10n.sessionTitle(this,session) + L10n.t(RecordsActivity.this,"\n开始：") + time
                 + L10n.t(RecordsActivity.this,"\n实际：") + AppUi.duration(this,session.actual) + L10n.t(RecordsActivity.this,"\n\n删除后无法恢复，任务本身会保留。");
-        if (!session.demo && (session.status == TaskProvider.COMPLETED || (session.free && session.status == TaskProvider.EARLY_END)))
+        if (StatisticsData.counted(session))
             message += L10n.t(RecordsActivity.this,"这条记录对应的专注时长和次数也会从统计中扣除。");
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle(L10n.t(RecordsActivity.this,"删除这条学习记录？"))
                 .setMessage(message).setNegativeButton(L10n.t(RecordsActivity.this,"取消"), null).setPositiveButton(L10n.t(RecordsActivity.this,"删除"), null).create();

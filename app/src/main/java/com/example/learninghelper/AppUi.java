@@ -22,6 +22,31 @@ import android.widget.Toast;
 
 public final class AppUi {
     private AppUi() {}
+    /** Show dialogs immediately; some emulator window transitions remain transparent. */
+    public static AlertDialog.Builder dialog(Context context){
+        return new AlertDialog.Builder(context){
+            @Override public AlertDialog create(){
+                AlertDialog dialog=super.create();
+                if(dialog.getWindow()!=null){
+                    android.view.Window window=dialog.getWindow();window.setWindowAnimations(0);
+                    GradientDrawable background=new GradientDrawable();background.setColor(SURFACE);background.setCornerRadius(dp(context,24));
+                    window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));window.setDimAmount(.32f);
+                    View decor=window.getDecorView();
+                    decor.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener(){
+                        public void onViewAttachedToWindow(View v){v.post(()->{
+                            // Clip the platform alert panel too: its own background can hide window corners.
+                            int id=context.getResources().getIdentifier("parentPanel","id","android");
+                            View panel=decor.findViewById(id);
+                            if(panel!=null){GradientDrawable shape=new GradientDrawable();shape.setColor(SURFACE);shape.setCornerRadius(dp(context,24));panel.setBackground(shape);panel.setClipToOutline(true);}
+                            for(int which:new int[]{-1,-2,-3}){Button button=dialog.getButton(which);if(button!=null){button.setTextColor(GREEN);button.setAllCaps(false);}}
+                        });}
+                        public void onViewDetachedFromWindow(View v){}
+                    });
+                }
+                return dialog;
+            }
+        };
+    }
     public static int GREEN = Color.rgb(37,120,104), INK = Color.rgb(23,37,42),
             GRAY = Color.rgb(101,117,123), BG = Color.rgb(245,247,248), SOFT = Color.rgb(231,242,236);
     public static int SURFACE = Color.WHITE;

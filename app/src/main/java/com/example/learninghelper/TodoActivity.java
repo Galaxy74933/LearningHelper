@@ -86,6 +86,7 @@ public class TodoActivity extends WheelActivity {
     private void reloadItems(){items.clear();items.addAll(StudyRepository.todos(this));cachedMonthViews.clear();}
     private void saveItem(JSONObject item,boolean create){StudyRepository.saveTodo(this,item,create);reloadItems();}
     private void updateCompletion(JSONObject item,boolean done){
+        if(TodoSchedule.daily(item)&&!(viewType==0&&mode==2)){showOccurrences(item);return;}
         int scrollY=page.scroll.getScrollY();
         int agendaY=agendaScroll==null?0:agendaScroll.getScrollY();
         int[] quadrantY=new int[quadrantScrolls.size()];
@@ -93,7 +94,7 @@ public class TodoActivity extends WheelActivity {
         try{
             // Copy first so a failed save cannot change the displayed source data.
             JSONObject updated=new JSONObject(item.toString());
-            updated.put("done",done);updated.put("completed_at",done?System.currentTimeMillis():0L);
+            TodoSchedule.complete(updated,CalendarDates.key(selected),done);
             saveItem(updated,false);
         }catch(Exception e){AppUi.error(this,e);reloadItems();}
         render(false);
@@ -116,9 +117,9 @@ public class TodoActivity extends WheelActivity {
     private int count(String day){Integer count=dayCounts.get(day);return count==null?0:count;}
     private void render(boolean animate){
         quadrantScrolls.clear();
-        todayKey=CalendarDates.key(System.currentTimeMillis());dayCounts.clear();for(JSONObject item:items){String date=item.optString("date");dayCounts.put(date,count(date)+1);}
+        todayKey=CalendarDates.key(System.currentTimeMillis());dayCounts.clear();for(JSONObject item:items){for(String date:TodoSchedule.dates(item))dayCounts.put(date,count(date)+1);}
         rangeButton.setVisibility(viewType==0?View.GONE:View.VISIBLE);rangeButton.setText(L10n.t(this,TodoDateRange.LABELS[timeRange])+" ▾");rangeButton.setContentDescription(L10n.t(TodoActivity.this,"时间范围：")+L10n.t(this,TodoDateRange.LABELS[timeRange]));
-        visibleItems.clear();Calendar today=CalendarDates.day(System.currentTimeMillis());for(JSONObject item:items)if(TodoDateRange.matches(item.optString("date"),timeRange,today))visibleItems.add(item);
+        visibleItems.clear();Calendar today=CalendarDates.day(System.currentTimeMillis());for(JSONObject item:items)if(TodoSchedule.matches(item,timeRange,today))visibleItems.add(item);
         updateViewTabs();tools();body.removeAllViews();page.scroll.scrollTo(0,0);
         if(!readable){body.addView(AppUi.text(this,L10n.t(TodoActivity.this,"待办读取失败，原数据已保留。请重新打开重试。"),16,AppUi.GRAY,false));return;}
         if(viewType==1&&visibleItems.isEmpty())body.addView(AppUi.text(this,L10n.t(TodoActivity.this,"这个时间范围内暂无待办"),15,AppUi.GRAY,false));
@@ -231,7 +232,8 @@ public class TodoActivity extends WheelActivity {
         body.addView(AppUi.text(this,L10n.month(this,selected),24,AppUi.INK,true));body.addView(weekdays());Calendar start=CalendarDates.week(selected);body.addView(weekRow(start,selected.get(Calendar.MONTH),false));
         LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(0,AppUi.dp(this,12),0,AppUi.dp(this,12));panel.setBackgroundColor(AppUi.BG);agendaPanel=panel;panel.addView(AppUi.text(this,CalendarDates.key(selected)+L10n.t(TodoActivity.this," · 待办事项"),19,AppUi.INK,true));
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);ScrollView inner=new ScrollView(this);agendaScroll=inner;inner.addView(list);panel.addView(inner,new LinearLayout.LayoutParams(-1,0,1));
-        String day=CalendarDates.key(selected);int n=0;for(JSONObject item:items)if(day.equals(item.optString("date"))){n++;itemRow(list,item);}if(n==0)list.addView(AppUi.text(this,L10n.t(TodoActivity.this,"这一天还没有事项，点击＋添加。"),15,AppUi.GRAY,false));
+        String day=CalendarDates.key(selected);ArrayList<JSONObject> agendaItems=new ArrayList<>(items);
+        Collections.sort(agendaItems,(a, b)->{String at=a.optString("time_mode","all").equals("all")?"":a.optString("start_time"),bt=b.optString("time_mode","all").equals("all")?"":b.optString("start_time");return at.compareTo(bt);});int n=0;for(JSONObject item:agendaItems)if(TodoSchedule.on(item,day)){n++;itemRow(list,item);}if(n==0)list.addView(AppUi.text(this,L10n.t(TodoActivity.this,"这一天还没有事项，点击＋添加。"),15,AppUi.GRAY,false));
         LinearLayout penRow=new LinearLayout(this);penRow.setGravity(Gravity.CENTER);
         View pen=new PencilButton();
         pen.setContentDescription(L10n.t(TodoActivity.this,"添加当天事项"));pen.setFocusable(true);pen.setOnClickListener(v->edit(null));penRow.addView(pen,new LinearLayout.LayoutParams(AppUi.dp(this,52),AppUi.dp(this,52)));panel.addView(penRow);
@@ -281,11 +283,18 @@ public class TodoActivity extends WheelActivity {
     }
     private void itemRow(LinearLayout list,JSONObject item){
         LinearLayout row=new LinearLayout(this);row.setPadding(0,AppUi.dp(this,8),0,AppUi.dp(this,8));row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.CENTER_VERTICAL);
-        CheckBox done=new CheckBox(this);AppUi.tintControl(done);done.setText(item.optString("title"));done.setTextColor(AppUi.INK);done.setChecked(item.optBoolean("done"));LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);LinearLayout titleRow=new LinearLayout(this);titleRow.setGravity(Gravity.CENTER_VERTICAL);titleRow.addView(done,new LinearLayout.LayoutParams(0,-2,1));info.addView(titleRow);
+        CheckBox done=new CheckBox(this);AppUi.tintControl(done);done.setText(item.optString("title"));done.setTextColor(AppUi.INK);done.setChecked(viewType==0&&mode==2?TodoSchedule.done(item,CalendarDates.key(selected)):item.optBoolean("done"));LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);LinearLayout titleRow=new LinearLayout(this);titleRow.setGravity(Gravity.CENTER_VERTICAL);titleRow.addView(done,new LinearLayout.LayoutParams(0,-2,1));info.addView(titleRow);
         String category=item.optString("category","未分类");int importance=Math.max(0,Math.min(3,item.optInt("priority",3)));
-        TextView categoryTag=AppUi.text(this,L10n.category(this,category),12,AppUi.tagColor(this,category),false);categoryTag.setMaxLines(1);categoryTag.setEllipsize(android.text.TextUtils.TruncateAt.END);categoryTag.setMaxWidth(AppUi.dp(this,90));titleRow.addView(categoryTag);TextView level=priorityLabel(importance,12);info.addView(level);info.addView(AppUi.text(this,L10n.t(TodoActivity.this,"截止：")+(item.optString("date").isEmpty()?L10n.t(TodoActivity.this,"未安排"):item.optString("date")),12,AppUi.GRAY,false));row.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+        TextView categoryTag=AppUi.text(this,L10n.category(this,category),12,AppUi.tagColor(this,category),false);categoryTag.setMaxLines(1);categoryTag.setEllipsize(android.text.TextUtils.TruncateAt.END);categoryTag.setMaxWidth(AppUi.dp(this,90));titleRow.addView(categoryTag);TextView level=priorityLabel(importance,12);info.addView(level);info.addView(AppUi.text(this,TodoSchedule.description(this,item),12,AppUi.GRAY,false));row.addView(info,new LinearLayout.LayoutParams(0,-2,1));
         done.setOnCheckedChangeListener((v,on)->{updateCompletion(item,on);});
-        TextView more=control("···",()->new AlertDialog.Builder(this).setItems(new String[]{L10n.t(TodoActivity.this,"编辑 / 调整日期"),L10n.t(TodoActivity.this,"删除")},(d,w)->{if(w==0)edit(item);else new AlertDialog.Builder(this).setTitle(L10n.t(TodoActivity.this,"删除这条待办？")).setMessage(item.optString("title")).setNegativeButton(L10n.t(TodoActivity.this,"取消"),null).setPositiveButton(L10n.t(TodoActivity.this,"删除"),(x,y)->{StudyRepository.deleteTodo(this,item.optString("id"));reloadItems();render(false);}).show();}).show());row.addView(more,new LinearLayout.LayoutParams(AppUi.dp(this,48),-2));list.addView(row);
+        if(TodoSchedule.daily(item)&&!(viewType==0&&mode==2)){done.setOnCheckedChangeListener(null);done.setOnClickListener(v->{done.setChecked(item.optBoolean("done"));showOccurrences(item);});}
+        TextView more=control("···",()->AppUi.dialog(this).setItems(new String[]{L10n.t(TodoActivity.this,"编辑 / 调整日期"),L10n.t(TodoActivity.this,"删除")},(d,w)->{if(w==0)edit(item);else AppUi.dialog(this).setTitle(L10n.t(TodoActivity.this,"删除这条待办？")).setMessage(item.optString("title")).setNegativeButton(L10n.t(TodoActivity.this,"取消"),null).setPositiveButton(L10n.t(TodoActivity.this,"删除"),(x,y)->{StudyRepository.deleteTodo(this,item.optString("id"));reloadItems();render(false);}).show();}).show());row.addView(more,new LinearLayout.LayoutParams(AppUi.dp(this,48),-2));list.addView(row);
+    }
+    private void showOccurrences(JSONObject original){
+        try{JSONObject draft=new JSONObject(original.toString());LinearLayout rows=new LinearLayout(this);rows.setOrientation(1);rows.setPadding(AppUi.dp(this,20),0,AppUi.dp(this,20),0);
+            for(String day:TodoSchedule.dates(draft)){CheckBox check=new CheckBox(this);AppUi.tintControl(check);check.setText(day);check.setTextColor(AppUi.INK);check.setChecked(TodoSchedule.done(draft,day));rows.addView(check);check.setOnCheckedChangeListener((v,on)->{try{TodoSchedule.complete(draft,day,on);saveItem(draft,false);}catch(Exception e){AppUi.error(this,e);}});}
+            ScrollView scroll=new ScrollView(this);scroll.addView(rows);AlertDialog dialog=AppUi.dialog(this).setTitle(original.optString("title")).setView(scroll).setPositiveButton(AppUi.label(this,"完成","Done"),null).create();dialog.setOnDismissListener(d->render(false));dialog.show();
+        }catch(Exception e){AppUi.error(this,e);}
     }
     private void edit(JSONObject existing){
         if(!readable)return;LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(AppUi.dp(this,20),0,AppUi.dp(this,20),0);
@@ -296,21 +305,17 @@ public class TodoActivity extends WheelActivity {
         Button categoryButton=AppUi.button(this,L10n.category(this,category[0])+" ▾",false);form.addView(categoryButton);
         final LinkedHashSet<String> categories=new LinkedHashSet<>();categories.add("未分类");categories.add("学习");categories.add("作业");categories.add("生活");
         categories.addAll(getSharedPreferences("learning_todos",0).getStringSet("categories",new HashSet<>()));for(JSONObject item:items)if(!item.optString("category").isEmpty())categories.add(item.optString("category"));
-        categoryButton.setOnClickListener(v->{ArrayList<String> options=new ArrayList<>(categories);options.add(L10n.t(TodoActivity.this,"＋ 新建分类"));new AlertDialog.Builder(this).setTitle(L10n.t(TodoActivity.this,"选择分类")).setItems(categoryLabels(options),(d,which)->{
+        categoryButton.setOnClickListener(v->{ArrayList<String> options=new ArrayList<>(categories);options.add(L10n.t(TodoActivity.this,"＋ 新建分类"));AppUi.dialog(this).setTitle(L10n.t(TodoActivity.this,"选择分类")).setItems(categoryLabels(options),(d,which)->{
             if(which<options.size()-1){category[0]=options.get(which);categoryButton.setText(L10n.category(this,category[0])+" ▾");}
             else{EditText name=new EditText(this);AppUi.tintControl(name);name.setHint(L10n.t(TodoActivity.this,"分类名称"));name.setSingleLine();name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(20)});
-                AlertDialog create=new AlertDialog.Builder(this).setTitle(L10n.t(TodoActivity.this,"新建分类")).setView(name).setNegativeButton(L10n.t(TodoActivity.this,"取消"),null).setPositiveButton(L10n.t(TodoActivity.this,"添加"),null).create();create.setOnShowListener(x->create.getButton(-1).setOnClickListener(w->{String value=name.getText().toString().trim();if(value.isEmpty()){name.setError(L10n.t(TodoActivity.this,"请填写分类名称"));return;}categories.add(value);category[0]=value;categoryButton.setText(value+" ▾");create.dismiss();}));create.show();}
+                AlertDialog create=AppUi.dialog(this).setTitle(L10n.t(TodoActivity.this,"新建分类")).setView(name).setNegativeButton(L10n.t(TodoActivity.this,"取消"),null).setPositiveButton(L10n.t(TodoActivity.this,"添加"),null).create();create.setOnShowListener(x->create.getButton(-1).setOnClickListener(w->{String value=name.getText().toString().trim();if(value.isEmpty()){name.setError(L10n.t(TodoActivity.this,"请填写分类名称"));return;}categories.add(value);category[0]=value;categoryButton.setText(value+" ▾");create.dismiss();}));create.show();}
         }).show();});
-        form.addView(AppUi.text(this,L10n.t(TodoActivity.this,"截止日期"),15,AppUi.INK,true));
-        final boolean[] noDate={existing!=null?existing.optString("date").isEmpty():viewType!=0&&timeRange==8};
-        Button pick=AppUi.button(this,(noDate[0]?L10n.t(TodoActivity.this,"未安排"):CalendarDates.key(date))+" ▾",false);form.addView(pick);
-        pick.setOnClickListener(v->new AlertDialog.Builder(this).setTitle(L10n.t(TodoActivity.this,"截止日期")).setItems(new String[]{L10n.t(TodoActivity.this,"今天"),L10n.t(TodoActivity.this,"明天"),L10n.t(TodoActivity.this,"下周（下周一）"),L10n.t(TodoActivity.this,"选择日期"),L10n.t(TodoActivity.this,"未安排日期")},(d,which)->{
-            Calendar today=CalendarDates.day(System.currentTimeMillis());
-            if(which==4){noDate[0]=true;pick.setText(L10n.t(TodoActivity.this,"未安排 ▾"));return;}
-            if(which==3){new DatePickerDialog(this,(view,y,m,day)->{noDate[0]=false;date.setTimeInMillis(CalendarDates.date(y,m,day).getTimeInMillis());pick.setText(CalendarDates.key(date)+" ▾");},date.get(Calendar.YEAR),date.get(Calendar.MONTH),date.get(Calendar.DATE)).show();return;}
-            Calendar due=which==0?today:which==1?CalendarDates.plus(today,Calendar.DATE,1):CalendarDates.plus(CalendarDates.week(today),Calendar.DATE,7);
-            noDate[0]=false;date.setTimeInMillis(due.getTimeInMillis());pick.setText(CalendarDates.key(date)+" ▾");
-        }).show());
+        final JSONObject schedule;
+        try{schedule=existing==null?new JSONObject():new JSONObject(existing.toString());if(existing==null)schedule.put("date",viewType!=0&&timeRange==8?"":CalendarDates.key(date));}catch(Exception e){AppUi.error(this,e);return;}
+        form.addView(AppUi.text(this,AppUi.label(this,"日期与时间","Date & time"),15,AppUi.INK,true));
+        Button pick=AppUi.button(this,TodoSchedule.description(this,schedule)+" ▾",false);form.addView(pick);
+        pick.setOnClickListener(v->TodoScheduleEditor.show(this,schedule,()->pick.setText(TodoSchedule.description(this,schedule)+" ▾")));
+        EditText notes=new EditText(this);AppUi.tintControl(notes);notes.setHint(AppUi.label(this,"备注（可选）","Notes (optional)"));notes.setText(existing==null?"":existing.optString("notes"));form.addView(notes);
         form.addView(AppUi.text(this,L10n.t(TodoActivity.this,"紧急重要程度"),15,AppUi.INK,true));
         Spinner priority=new Spinner(this);ArrayAdapter<String> adapter=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,priorities){
             @Override public View getView(int position,View recycled,ViewGroup parent){return option(position);}
@@ -318,14 +323,14 @@ public class TodoActivity extends WheelActivity {
             private View option(int position){TextView text=priorityLabel(position,15);text.setGravity(Gravity.CENTER_VERTICAL);text.setPadding(AppUi.dp(TodoActivity.this,10),AppUi.dp(TodoActivity.this,12),AppUi.dp(TodoActivity.this,8),AppUi.dp(TodoActivity.this,12));text.setMinHeight(AppUi.dp(TodoActivity.this,52));return text;}
         };priority.setAdapter(adapter);priority.setSelection(existing==null?draftPriority:Math.max(0,Math.min(3,existing.optInt("priority",3))));form.addView(priority,new LinearLayout.LayoutParams(-1,-2));draftPriority=3;draftCategory="未分类";
         ScrollView formScroll=new ScrollView(this);formScroll.addView(form);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?L10n.t(TodoActivity.this,"添加待办"):L10n.t(TodoActivity.this,"编辑待办")).setView(formScroll).setNegativeButton(L10n.t(TodoActivity.this,"取消"),null).setPositiveButton(L10n.t(TodoActivity.this,"保存"),null).create();
+        AlertDialog dialog=AppUi.dialog(this).setTitle(existing==null?L10n.t(TodoActivity.this,"添加待办"):L10n.t(TodoActivity.this,"编辑待办")).setView(formScroll).setNegativeButton(L10n.t(TodoActivity.this,"取消"),null).setPositiveButton(L10n.t(TodoActivity.this,"保存"),null).create();
         dialog.setOnShowListener(x->dialog.getButton(-1).setOnClickListener(v->{
             String value=title.getText().toString().trim();if(value.isEmpty()){title.setError(L10n.t(TodoActivity.this,"请填写事项"));return;}
-            try{JSONObject item=existing==null?new JSONObject():existing;
+            try{JSONObject item=new JSONObject(schedule.toString());
                 if(existing==null){item.put("id",UUID.randomUUID().toString());item.put("done",false);}
-                item.put("title",value);item.put("date",noDate[0]?"":CalendarDates.key(date));item.put("category",category[0]);item.put("priority",priority.getSelectedItemPosition());
+                item.put("title",value);item.remove("deadline");item.put("notes",notes.getText().toString().trim());TodoSchedule.normalize(item);item.put("category",category[0]);item.put("priority",priority.getSelectedItemPosition());
                 saveItem(item,existing==null);getSharedPreferences("learning_todos",0).edit().putStringSet("categories",new HashSet<>(categories)).apply();
-                selected=(Calendar)date.clone();mode=2;dialog.dismiss();render(false);
+                if(!item.optString("date").isEmpty())selected=TodoSchedule.parse(item.optString("date"));mode=2;dialog.dismiss();render(false);
             }catch(Exception e){AppUi.error(this,e);}
         }));dialog.show();
     }
@@ -390,6 +395,7 @@ public class TodoActivity extends WheelActivity {
                 ScrollView scroll=new ScrollView(this);quadrantScrolls.add(scroll);scroll.setOnGenericMotionListener((v,e)->{if(e.getAction()==MotionEvent.ACTION_SCROLL){scroll.scrollBy(0,Math.round(-e.getAxisValue(MotionEvent.AXIS_VSCROLL)*AppUi.dp(this,56)));return true;}return false;});LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);scroll.addView(list);card.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
                 for(JSONObject item:visibleItems)if(priority(item)==level){LinearLayout taskRow=new LinearLayout(this);taskRow.setGravity(Gravity.CENTER_VERTICAL);
                     CheckBox check=new CheckBox(this);AppUi.tintControl(check);check.setText(item.optString("title"));check.setTextSize(14);check.setMinHeight(AppUi.dp(this,38));check.setMinimumHeight(AppUi.dp(this,38));check.setPadding(check.getPaddingLeft(),0,check.getPaddingRight(),0);check.setChecked(item.optBoolean("done"));taskRow.addView(check,new LinearLayout.LayoutParams(0,-2,1));check.setOnCheckedChangeListener((v,on)->{updateCompletion(item,on);});
+                    if(TodoSchedule.daily(item)){check.setText(item.optString("title")+" · "+TodoSchedule.completed(item)+"/"+TodoSchedule.dates(item).size());check.setOnCheckedChangeListener(null);check.setOnClickListener(v->{check.setChecked(item.optBoolean("done"));showOccurrences(item);});}
                     TextView edit=control(L10n.t(this,"编辑"),()->edit(item));edit.setTextSize(11);edit.setMinHeight(AppUi.dp(this,38));taskRow.addView(edit,new LinearLayout.LayoutParams(AppUi.dp(this,38),AppUi.dp(this,38)));list.addView(taskRow);}
                 LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.setMargins(column==0?0:AppUi.dp(this,4),AppUi.dp(this,4),column==0?AppUi.dp(this,4):0,AppUi.dp(this,4));line.addView(card,lp);
             }grid.addView(line,new LinearLayout.LayoutParams(-1,0,1));}body.addView(grid,new LinearLayout.LayoutParams(-1,-2));
@@ -416,11 +422,11 @@ public class TodoActivity extends WheelActivity {
     }
     private void createCategory(){
         EditText input=new EditText(this);AppUi.tintControl(input);input.setSingleLine();input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(20)});
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(L10n.t(this,"新建分类")).setView(input).setNegativeButton(L10n.t(this,"取消"),null).setPositiveButton(L10n.t(this,"添加"),null).create();
+        AlertDialog dialog=AppUi.dialog(this).setTitle(L10n.t(this,"新建分类")).setView(input).setNegativeButton(L10n.t(this,"取消"),null).setPositiveButton(L10n.t(this,"添加"),null).create();
         dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{String value=input.getText().toString().trim();if(value.isEmpty()){input.setError(L10n.t(this,"请填写分类名称"));return;}
             Set<String> names=new HashSet<>(categoryNames());names.add(value);getSharedPreferences("learning_todos",0).edit().putStringSet("categories",names).apply();categoryFilter=value;dialog.dismiss();render(false);}));dialog.show();
     }
-    private void undated(){ArrayList<JSONObject> old=new ArrayList<>();for(JSONObject i:items)if(i.optString("date").isEmpty())old.add(i);if(old.isEmpty()){AppUi.toast(this,L10n.t(TodoActivity.this,"没有未安排日期的待办"));return;}String[] names=new String[old.size()];for(int i=0;i<old.size();i++)names[i]=old.get(i).optString("title");new AlertDialog.Builder(this).setTitle(L10n.t(TodoActivity.this,"未安排日期 · 点击分配日期")).setItems(names,(d,w)->edit(old.get(w))).setNegativeButton(AppUi.label(this,"关闭","Close"),null).show();}
+    private void undated(){ArrayList<JSONObject> old=new ArrayList<>();for(JSONObject i:items)if(i.optString("date").isEmpty())old.add(i);if(old.isEmpty()){AppUi.toast(this,L10n.t(TodoActivity.this,"没有未安排日期的待办"));return;}String[] names=new String[old.size()];for(int i=0;i<old.size();i++)names[i]=old.get(i).optString("title");AppUi.dialog(this).setTitle(L10n.t(TodoActivity.this,"未安排日期 · 点击分配日期")).setItems(names,(d,w)->edit(old.get(w))).setNegativeButton(AppUi.label(this,"关闭","Close"),null).show();}
     private class MiniMonth extends View {
         final String monthLabel;final int year,month;final Paint p=new Paint(3);final String[] keys;final int offset,days;
         MiniMonth(int y,int m){super(TodoActivity.this);year=y;month=m;Calendar first=CalendarDates.date(y,m,1);monthLabel=new java.text.SimpleDateFormat(L10n.english(getContext())?"MMM":"M月",L10n.locale(getContext())).format(CalendarDates.date(year,month,1).getTime());offset=(first.get(Calendar.DAY_OF_WEEK)+5)%7;days=first.getActualMaximum(Calendar.DATE);keys=new String[days+1];for(int day=1;day<=days;day++)keys[day]=CalendarDates.key(CalendarDates.date(y,m,day));setFocusable(true);setContentDescription(L10n.month(getContext(),first));}

@@ -33,6 +33,7 @@ public class TaskProvider extends ContentProvider {
 
     @Override public boolean onCreate() {
         helper = new DatabaseHelper(getContext());
+        try{DataProfiles.initialize(getContext(),helper.getWritableDatabase());}catch(Exception e){android.util.Log.e("DataProfiles","Recovery pending",e);}
         return true;
     }
 
@@ -139,6 +140,14 @@ public class TaskProvider extends ContentProvider {
         return count;
     }
 
+    @Override public android.os.Bundle call(String method,String arg,android.os.Bundle extras){
+        if(!"load_demo".equals(method)&&!"switch_profile".equals(method)&&!"data_profile".equals(method))return super.call(method,arg,extras);
+        try{SQLiteDatabase db=helper.getWritableDatabase();DataProfiles.initialize(getContext(),db);
+            if(!"data_profile".equals(method)){DataProfiles.switchTo(getContext(),db,"load_demo".equals(method)?"demo":arg);changed();}
+            android.os.Bundle result=new android.os.Bundle();result.putString("active",DataProfiles.active(db));return result;
+        }catch(Exception e){throw new IllegalStateException(e.getMessage(),e);}
+    }
+
     private ContentValues taskValues(ContentValues input, boolean insert) {
         if (input == null) throw new IllegalArgumentException("内容不能为空");
         ContentValues v = new ContentValues();
@@ -195,6 +204,8 @@ public class TaskProvider extends ContentProvider {
             if(!todoId.isEmpty()){
                 org.json.JSONObject todo=StudyRepository.todo(getContext(),todoId);
                 if(todo==null||todo.optBoolean("done"))throw new IllegalStateException("任务不存在或已经完成");
+                String date=input.getAsString("todo_date");
+                if(date!=null&&!date.isEmpty()&&(!TodoSchedule.on(todo,date)||TodoSchedule.done(todo,date)))throw new IllegalStateException(AppUi.label(getContext(),"任务日期已修改或完成，请重新选择","Task date changed or completed. Please select again."));
                 task=0L;title=todo.optString("title");
             }
             if (task > 0) try (Cursor c = db.query("tasks", new String[]{"title"},
@@ -204,7 +215,7 @@ public class TaskProvider extends ContentProvider {
                 title = c.getString(0);
             }
             ContentValues v = new ContentValues();
-            v.put("todo_id",todoId);v.put("free_focus", free ? 1 : 0); v.put("task_id", task); v.put("title_snapshot", title);
+            v.put("todo_date",todoId.isEmpty()?"":input.getAsString("todo_date")==null?"":input.getAsString("todo_date"));v.put("todo_id",todoId);v.put("free_focus", free ? 1 : 0); v.put("task_id", task); v.put("title_snapshot", title);
             v.put("planned_seconds", duration); v.put("actual_seconds", 0);
             v.put("started_at", System.currentTimeMillis());
             v.put("started_elapsed", SystemClock.elapsedRealtime());
@@ -233,7 +244,24 @@ public class TaskProvider extends ContentProvider {
             String owner = c.getString(c.getColumnIndexOrThrow("owner_token"));
             if (!PROCESS_TOKEN.equals(owner) && state != INTERRUPTED)
                 throw new IllegalStateException("上次专注已中断，请先确认恢复提示");
-            int elapsed = TimerMath.elapsedSeconds(started, planned, SystemClock.elapsedRealtime());
+            long now=SystemClock.elapsedRealtime();
+            long pausedAt=c.getLong(c.getColumnIndexOrThrow("paused_at"));
+            long pausedTotal=c.getLong(c.getColumnIndexOrThrow("paused_total"));
+            if(input.containsKey("paused")){
+                boolean pause=input.getAsBoolean("paused");
+                ContentValues change=new ContentValues();
+                if(pause&&pausedAt==0){
+                    if(c.getInt(c.getColumnIndexOrThrow("free_focus"))==0&&TimerMath.remainingMillis(started,planned,now)==0)throw new IllegalStateException("Timer already finished");
+                    change.put("paused_at",now);
+                    change.put("actual_seconds",TimerMath.elapsedSeconds(started,planned,now));
+                }else if(!pause&&pausedAt>0){
+                    long gap=Math.max(0,now-pausedAt);
+                    change.put("started_elapsed",started+gap);change.put("paused_total",pausedTotal+gap);change.put("paused_at",0L);
+                }
+                int changed=change.size()==0?0:db.update("sessions",change,"_id=? AND status=0",new String[]{String.valueOf(id)});
+                db.setTransactionSuccessful();return changed;
+            }
+            int elapsed = TimerMath.elapsedSeconds(started, planned, pausedAt>0?pausedAt:now);
             if (state == COMPLETED && elapsed < planned)
                 throw new IllegalStateException("还没到专注结束时间");
             if (state == EARLY_END && elapsed >= planned) state = COMPLETED;
@@ -241,7 +269,7 @@ public class TaskProvider extends ContentProvider {
             ContentValues v = new ContentValues();
             v.put("actual_seconds", elapsed);
             if (state != RUNNING) {
-                long end = state == COMPLETED ? wall + planned * 1000L : System.currentTimeMillis();
+                long end = state == COMPLETED ? wall + planned * 1000L + pausedTotal : System.currentTimeMillis();
                 v.put("status", state); v.put("ended_at", end);
                 v.put("ended_day", new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date(end)));
             }
@@ -257,7 +285,7 @@ public class TaskProvider extends ContentProvider {
     }
 
     private static class DatabaseHelper extends SQLiteOpenHelper {
-        DatabaseHelper(Context c) { super(c, "learning_helper.db", null, 7); }
+        DatabaseHelper(Context c) { super(c, "learning_helper.db", null, 9); }
         @Override public void onCreate(SQLiteDatabase db) {
             db.execSQL("CREATE TABLE tasks (_id INTEGER PRIMARY KEY AUTOINCREMENT,"
                     + "title TEXT NOT NULL,note TEXT NOT NULL DEFAULT '',done INTEGER NOT NULL DEFAULT 0,"
@@ -270,13 +298,15 @@ public class TaskProvider extends ContentProvider {
             if (oldVersion < 4) db.execSQL("UPDATE sessions SET is_demo=0 WHERE planned_seconds IN (10,30)");
             if (oldVersion >= 2 && oldVersion < 6) { db.execSQL("ALTER TABLE sessions ADD COLUMN free_focus INTEGER NOT NULL DEFAULT 0"); db.execSQL("UPDATE sessions SET free_focus=1 WHERE task_id=0"); }
             if (oldVersion >= 2 && oldVersion < 7) db.execSQL("ALTER TABLE sessions ADD COLUMN todo_id TEXT NOT NULL DEFAULT ''");
+            if(oldVersion>=2&&oldVersion<8){db.execSQL("ALTER TABLE sessions ADD COLUMN paused_at INTEGER NOT NULL DEFAULT 0");db.execSQL("ALTER TABLE sessions ADD COLUMN paused_total INTEGER NOT NULL DEFAULT 0");}
+            if(oldVersion>=2&&oldVersion<9)db.execSQL("ALTER TABLE sessions ADD COLUMN todo_date TEXT NOT NULL DEFAULT ''");
             if (oldVersion < 5) db.execSQL("ALTER TABLE tasks ADD COLUMN completed_at INTEGER NOT NULL DEFAULT 0");
         }
         private void sessions(SQLiteDatabase db) {
             db.execSQL("CREATE TABLE IF NOT EXISTS sessions (_id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                    + "todo_id TEXT NOT NULL DEFAULT '',task_id INTEGER NOT NULL,title_snapshot TEXT NOT NULL,planned_seconds INTEGER NOT NULL,"
+                    + "todo_date TEXT NOT NULL DEFAULT '',todo_id TEXT NOT NULL DEFAULT '',task_id INTEGER NOT NULL,title_snapshot TEXT NOT NULL,planned_seconds INTEGER NOT NULL,"
                     + "actual_seconds INTEGER NOT NULL DEFAULT 0,started_at INTEGER NOT NULL,"
-                    + "started_elapsed INTEGER NOT NULL,ended_at INTEGER NOT NULL DEFAULT 0,"
+                    + "paused_at INTEGER NOT NULL DEFAULT 0,paused_total INTEGER NOT NULL DEFAULT 0,started_elapsed INTEGER NOT NULL,ended_at INTEGER NOT NULL DEFAULT 0,"
                     + "ended_day TEXT NOT NULL DEFAULT '',status INTEGER NOT NULL DEFAULT 0,"
                     + "is_demo INTEGER NOT NULL DEFAULT 0,free_focus INTEGER NOT NULL DEFAULT 0,owner_token TEXT NOT NULL,memo TEXT NOT NULL DEFAULT '')");
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS one_running_session ON sessions(status) WHERE status=0");
