@@ -1,13 +1,13 @@
-# 自然场景素材 / Nature background credits
+# 自然场景背景
 
-Bundled photographs are used as part of the app's focus interface, with cropping, a contrast overlay and slow pan/zoom animation. They are not videos or independently moving water/leaves.
+本次背景由项目用户提供的三个视频生成，仅用于替换场景画面。原有声音素材保持不变。
 
-| Asset | Source |
+| 场景 | 用户提供的源文件 |
 |---|---|
-| Rain on glass | https://www.pexels.com/photo/110874/ |
-| Tropical shore | https://www.pexels.com/photo/457882/ |
-| Forest | https://www.pexels.com/photo/1671325/ |
+| 海浪 | 5feedb1d87203dbd3059dc4003afdd95.mp4 |
+| 林间 | 0531210dba33e679d61b36f9a416643a.mp4 |
+| 雨声 | 1246c43d14d3dc85cc4beb8f0c195b10.mp4 |
 
-Source: Pexels. License: https://www.pexels.com/license/ . The Pexels License permits free use and modification; do not sell standalone copies, imply endorsement, or redistribute them as a stock-photo collection. These assets are bundled solely for this application interface. Source images downloaded from images.pexels.com on 2026-11-18, resized to 1200 px width. The license page was blocked by its automated browser challenge during this session; the link is retained for review.
+处理：约半速播放、24 fps、循环接缝淡化、H.264 编码，并移除视频音轨。相同名称的 JPG 为视频首帧，用于加载或播放失败时的后备背景。源视频未附独立许可证，此处记录来源，不声明第三方授权范围。
 
-User-selected photos are copied to private app storage, not uploaded or included in this repository.
+自选照片仍仅保存在设备本地，不上传。

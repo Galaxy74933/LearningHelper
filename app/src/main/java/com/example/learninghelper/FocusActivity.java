@@ -21,6 +21,7 @@ public class FocusActivity extends WheelActivity {
     private List<StudyRepository.Task> tasks=new ArrayList<>();
     private FocusOptions soundOptions;
     private FocusAtmosphere atmosphere;
+    private FocusVideoBackground videoBackground;
     private static final int PICK_AUDIO=44, PICK_BACKGROUND=45;
 
     private StudyRepository.Session session;
@@ -66,7 +67,7 @@ public class FocusActivity extends WheelActivity {
         out.putInt("duration_index", durationIndex); out.putInt("sound_index", selectedSound);
     }
     @Override protected void onResume() { super.onResume(); visible = true; load(); }
-    @Override protected void onPause() { visible = false; if(atmosphere!=null)atmosphere.stop(); handler.removeCallbacks(tick); super.onPause(); }
+    @Override protected void onPause() { visible = false; if(atmosphere!=null)atmosphere.stop();if(videoBackground!=null)videoBackground.stop(); handler.removeCallbacks(tick); super.onPause(); }
     @Override protected void onStop() { checkpoint(); super.onStop(); }
     @Override protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
@@ -84,9 +85,9 @@ public class FocusActivity extends WheelActivity {
         if (busy) return;
         int version = ++loadVersion;
         handler.removeCallbacks(tick);
-        if(atmosphere!=null)atmosphere.stop();
+        if(atmosphere!=null)atmosphere.stop();if(videoBackground!=null)videoBackground.stop();
         page = AppUi.page(this, L10n.t(FocusActivity.this,"专注学习"), L10n.t(FocusActivity.this,"专注一件事，按自己的节奏完成"));
-        atmosphere=new FocusAtmosphere(this);page.root.setBackground(atmosphere);
+        atmosphere=new FocusAtmosphere(this);videoBackground=new FocusVideoBackground(this,page,atmosphere);
         AppUi.navigation(this,page,0);
         page.content.addView(AppUi.text(this, L10n.t(FocusActivity.this,"正在读取专注状态…"), 16, AppUi.GRAY, false));
         StudyRepository.run(this, () -> {
@@ -173,7 +174,7 @@ public class FocusActivity extends WheelActivity {
                 AppUi.prefs(this).edit().putString("scene_mode",index==0?"auto":"off").apply();updateAtmosphere();
             }).setNegativeButton(AppUi.label(this,"取消","Cancel"),null).show();
     }
-    private void updateAtmosphere(){if(atmosphere!=null){atmosphere.setSound(selectedSound);if(visible)atmosphere.start();}}
+    private void updateAtmosphere(){if(videoBackground!=null){videoBackground.setSound(selectedSound);if(visible)videoBackground.start();}if(atmosphere!=null){atmosphere.setSound(selectedSound);if(visible)atmosphere.start();}}
     private String time(long seconds){return seconds>=3600?String.format(Locale.US,"%02d:%02d:%02d",seconds/3600,seconds/60%60,seconds%60):String.format(Locale.US,"%02d:%02d",seconds/60,seconds%60);}
     private int soundPosition(){return selectedSound==0?4:selectedSound==4?3:selectedSound-1;}
     private Dialog optionSheet(String title,LinearLayout content){
