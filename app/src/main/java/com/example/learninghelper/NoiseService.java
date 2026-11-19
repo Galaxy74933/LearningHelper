@@ -19,6 +19,16 @@ public class NoiseService extends Service {
     private static volatile String playbackStatus = "声音已关闭";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private MediaPlayer player;
+    private boolean playerPrepared;
+    private String playingUri;
+    private String positionKey() { return session==null?"":session.owner+":"+session.id; }
+    private SharedPreferences musicPosition() { return getSharedPreferences("focus_music_position", MODE_PRIVATE); }
+    private void rememberPosition() {
+        if(player==null||!playerPrepared||playingUri==null||session==null)return;
+        try { musicPosition().edit().putString("session",positionKey()).putString("uri",playingUri)
+                .putInt("position",player.getCurrentPosition()).apply(); }
+        catch(IllegalStateException e) { Log.w("NoiseService","Cannot save music position",e); }
+    }
     private MediaSession mediaSession;
     private AudioManager audioManager;
     private AudioFocusRequest focusRequest;
@@ -131,6 +141,7 @@ public class NoiseService extends Service {
         }
         int[] ids = {0, R.raw.rain, R.raw.waves, R.raw.forest};
         try (AssetFileDescriptor asset = audioUri==null?getResources().openRawResourceFd(ids[sound]):null) {
+            playingUri=audioUri;playerPrepared=false;
             player = new MediaPlayer();
             player.setAudioAttributes(attributes);
             player.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
@@ -140,12 +151,22 @@ public class NoiseService extends Service {
             player.setOnPreparedListener(p -> {
                 if (token != generation || player != p) return;
                 if (session == null || session.remaining() == 0) { handler.post(tick); return; }
+                playerPrepared=true;
+                Runnable begin=()->{
+                    if(token!=generation||player!=p)return;
                 p.start(); playbackStatus = "正在播放：" + audioLabel;
                 mediaSession.setPlaybackState(new PlaybackState.Builder().setActions(PlaybackState.ACTION_STOP | PlaybackState.ACTION_PAUSE)
                         .setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f).build());
                 mediaSession.setActive(true);
                 getSystemService(NotificationManager.class).notify(NOTICE, notification(session.id,L10n.sessionTitle(this,session)));
                 handler.post(tick);
+                };
+                SharedPreferences saved=musicPosition();
+                int position=audioUri!=null&&positionKey().equals(saved.getString("session",""))&&audioUri.equals(saved.getString("uri",""))?saved.getInt("position",0):0;
+                if(position>0&&position<p.getDuration()){
+                    p.setOnSeekCompleteListener(seeked->{seeked.setOnSeekCompleteListener(null);begin.run();});
+                    p.seekTo(position);
+                }else begin.run();
             });
             player.setOnErrorListener((p, what, extra) -> { failed("声音播放失败，计时仍会继续", null); return true; });
             player.prepareAsync();
@@ -181,7 +202,8 @@ public class NoiseService extends Service {
         AppUi.toast(this,L10n.t(this,message)); stopSelf();
     }
     private void releasePlayer() {
-        if (player != null) { player.setOnPreparedListener(null); player.setOnErrorListener(null); player.release(); player = null; }
+        rememberPosition();playerPrepared=false;playingUri=null;
+        if (player != null) { player.setOnPreparedListener(null); player.setOnErrorListener(null); player.setOnSeekCompleteListener(null); player.release(); player = null; }
         if (focusRequest != null) { audioManager.abandonAudioFocusRequest(focusRequest); focusRequest = null; }
         if (mediaSession != null) mediaSession.setActive(false);
     }
